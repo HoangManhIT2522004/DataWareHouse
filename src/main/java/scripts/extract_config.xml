@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- ====================================================================
+         CONTROL DATABASE CONFIGURATION
+         ==================================================================== -->
+    <control>
+        <url>jdbc:postgresql://localhost:5432/control</url>
+        <username>postgres</username>
+        <password>your_password</password>
+    </control>
+
+    <!-- ====================================================================
+         WEATHER API CONFIGURATION
+         ==================================================================== -->
+    <api>
+        <weather>
+            <provider>WeatherAPI.com</provider>
+            <apiKey>4e10d60eb8384de694031201251710</apiKey>
+            <baseUrl>https://api.weatherapi.com/v1/current.json?key=4e10d60eb8384de694031201251710&amp;q=Hanoi&amp;aqi=yes</baseUrl>
+            <endpoint>current.json</endpoint>
+            <includeAQI>true</includeAQI>
+            <timeout>30000</timeout>
+        </weather>
+    </api>
+
+    <!-- ====================================================================
+         CONFIG SOURCE - Sẽ được insert vào bảng config_src
+         ==================================================================== -->
+    <config>
+        <configSource>
+            <config_name>WA_Extract</config_name>
+            <source_type>api</source_type>
+            <source_url>https://api.weatherapi.com/v1/current.json?key=4e10d60eb8384de694031201251710&amp;q=Hanoi&amp;aqi=yes</source_url>
+            <output_path>D:\DataWareHouse\src\main\java\data\weather.csv</output_path>
+            <is_active>true</is_active>
+        </configSource>
+    </config>
+
+    <!-- ====================================================================
+         DANH SÁCH 64 TỈNH THÀNH VIỆT NAM
+         ==================================================================== -->
+    <locations>
+        <!-- Miền Bắc -->
+        <location><name>Hà Nội</name><apiName>Hanoi</apiName><code>HN</code><region>Miền Bắc</region></location>
+        <location><name>Hải Phòng</name><apiName>Hai Phong</apiName><code>HP</code><region>Miền Bắc</region></location>
+        <location><name>Hạ Long</name><apiName>Ha Long</apiName><code>QN</code><region>Miền Bắc</region></location>
+        <location><name>Bắc Ninh</name><apiName>Bac Ninh</apiName><code>BNI</code><region>Miền Bắc</region></location>
+        <location><name>Hải Dương</name><apiName>Hai Duong</apiName><code>HD</code><region>Miền Bắc</region></location>
+        <location><name>Hưng Yên</name><apiName>20.6464,106.0511</apiName><code>HY</code><region>Miền Bắc</region></location>
+        <location><name>Phủ Lý</name><apiName>20.5408,105.9166</apiName><code>HNA</code><region>Miền Bắc</region></location>
+        <location><name>Nam Định</name><apiName>Nam Dinh</apiName><code>ND</code><region>Miền Bắc</region></location>
+        <location><name>Thái Bình</name><apiName>20.4463,106.3365</apiName><code>TB</code><region>Miền Bắc</region></location>
+        <location><name>Ninh Bình</name><apiName>Ninh Binh</apiName><code>NB</code><region>Miền Bắc</region></location>
+        <location><name>Vĩnh Yên</name><apiName>21.3089,105.5967</apiName><code>VP</code><region>Miền Bắc</region></location>
+        <location><name>Bắc Giang</name><apiName>Bac Giang</apiName><code>BG</code><region>Miền Bắc</region></location>
+        <location><name>Việt Trì</name><apiName>21.3227,105.4025</apiName><code>PT</code><region>Miền Bắc</region></location>
+        <location><name>Thái Nguyên</name><apiName>21.5671,105.8252</apiName><code>TN</code><region>Miền Bắc</region></location>
+        <location><name>Lạng Sơn</name><apiName>21.8536,106.7613</apiName><code>LS</code><region>Miền Bắc</region></location>
+        <location><name>Cao Bằng</name><apiName>Cao Bang</apiName><code>CB</code><region>Miền Bắc</region></location>
+        <location><name>Bắc Kạn</name><apiName>22.1471,105.8348</apiName><code>BK</code><region>Miền Bắc</region></location>
+        <location><name>Tuyên Quang</name><apiName>Tuyen Quang</apiName><code>TQ</code><region>Miền Bắc</region></location>
+        <location><name>Hà Giang</name><apiName>Ha Giang</apiName><code>HG</code><region>Miền Bắc</region></location>
+        <location><name>Lào Cai</name><apiName>Lao Cai</apiName><code>LC</code><region>Miền Bắc</region></location>
+        <location><name>Yên Bái</name><apiName>21.7168,104.8986</apiName><code>YB</code><region>Miền Bắc</region></location>
+        <location><name>Lai Châu</name><apiName>Lai Chau</apiName><code>LCH</code><region>Miền Bắc</region></location>
+        <location><name>Điện Biên</name><apiName>Dien Bien Phu</apiName><code>DB</code><region>Miền Bắc</region></location>
+        <location><name>Sơn La</name><apiName>Son La</apiName><code>SL</code><region>Miền Bắc</region></location>
+        <location><name>Hòa Bình</name><apiName>Hoa Binh</apiName><code>HB</code><region>Miền Bắc</region></location>
+
+        <!-- Miền Trung -->
+        <location><name>Thanh Hóa</name><apiName>Thanh Hoa</apiName><code>TH</code><region>Miền Trung</region></location>
+        <location><name>Vinh</name><apiName>Vinh</apiName><code>NA</code><region>Miền Trung</region></location>
+        <location><name>Hà Tĩnh</name><apiName>Ha Tinh</apiName><code>HT</code><region>Miền Trung</region></location>
+        <location><name>Đồng Hới</name><apiName>Dong Hoi</apiName><code>QB</code><region>Miền Trung</region></location>
+        <location><name>Đông Hà</name><apiName>Dong Ha</apiName><code>QT</code><region>Miền Trung</region></location>
+        <location><name>Huế</name><apiName>Hue</apiName><code>TTH</code><region>Miền Trung</region></location>
+        <location><name>Đà Nẵng</name><apiName>Da Nang</apiName><code>DN</code><region>Miền Trung</region></location>
+        <location><name>Tam Kỳ</name><apiName>Tam Ky</apiName><code>QNA</code><region>Miền Trung</region></location>
+        <location><name>Quảng Ngãi</name><apiName>Quang Ngai</apiName><code>QNG</code><region>Miền Trung</region></location>
+        <location><name>Quy Nhơn</name><apiName>Quy Nhon</apiName><code>BD</code><region>Miền Trung</region></location>
+        <location><name>Tuy Hòa</name><apiName>Tuy Hoa</apiName><code>PY</code><region>Miền Trung</region></location>
+        <location><name>Nha Trang</name><apiName>Nha Trang</apiName><code>KH</code><region>Miền Trung</region></location>
+        <location><name>Phan Rang</name><apiName>Phan Rang</apiName><code>NT</code><region>Miền Trung</region></location>
+        <location><name>Phan Thiết</name><apiName>Phan Thiet</apiName><code>BT</code><region>Miền Trung</region></location>
+        <location><name>Kon Tum</name><apiName>Kon Tum</apiName><code>KT</code><region>Tây Nguyên</region></location>
+        <location><name>Pleiku</name><apiName>Pleiku</apiName><code>GL</code><region>Tây Nguyên</region></location>
+        <location><name>Buôn Ma Thuột</name><apiName>Buon Ma Thuot</apiName><code>DL</code><region>Tây Nguyên</region></location>
+        <location><name>Gia Nghĩa</name><apiName>Gia Nghia</apiName><code>DNO</code><region>Tây Nguyên</region></location>
+        <location><name>Đà Lạt</name><apiName>Da Lat</apiName><code>LD</code><region>Tây Nguyên</region></location>
+
+        <!-- Miền Nam -->
+        <location><name>Hồ Chí Minh</name><apiName>Ho Chi Minh</apiName><code>HCM</code><region>Miền Nam</region></location>
+        <location><name>Đồng Xoài</name><apiName>Dong Xoai</apiName><code>BP</code><region>Miền Nam</region></location>
+        <location><name>Tây Ninh</name><apiName>Tay Ninh</apiName><code>TNI</code><region>Miền Nam</region></location>
+        <location><name>Thủ Dầu Một</name><apiName>10.9804,106.6519</apiName><code>BDU</code><region>Miền Nam</region></location>
+        <location><name>Biên Hòa</name><apiName>Bien Hoa</apiName><code>DNa</code><region>Miền Nam</region></location>
+        <location><name>Vũng Tàu</name><apiName>Vung Tau</apiName><code>BRVT</code><region>Miền Nam</region></location>
+        <location><name>Tân An</name><apiName>Tan An</apiName><code>LA</code><region>Miền Nam</region></location>
+        <location><name>Mỹ Tho</name><apiName>My Tho</apiName><code>TG</code><region>Miền Nam</region></location>
+        <location><name>Bến Tre</name><apiName>Ben Tre</apiName><code>BTE</code><region>Miền Nam</region></location>
+        <location><name>Trà Vinh</name><apiName>Tra Vinh</apiName><code>TV</code><region>Miền Nam</region></location>
+        <location><name>Vĩnh Long</name><apiName>Vinh Long</apiName><code>VL</code><region>Miền Nam</region></location>
+        <location><name>Cao Lãnh</name><apiName>Cao Lanh</apiName><code>DT</code><region>Miền Nam</region></location>
+        <location><name>Long Xuyên</name><apiName>Long Xuyen</apiName><code>AG</code><region>Miền Nam</region></location>
+        <location><name>Rạch Giá</name><apiName>10.0125,105.0808</apiName><code>KG</code><region>Miền Nam</region></location>
+        <location><name>Cần Thơ</name><apiName>Can Tho</apiName><code>CT</code><region>Miền Nam</region></location>
+        <location><name>Vị Thanh</name><apiName>Vi Thanh</apiName><code>HGI</code><region>Miền Nam</region></location>
+        <location><name>Sóc Trăng</name><apiName>9.6037,105.9739</apiName><code>ST</code><region>Miền Nam</region></location>
+        <location><name>Bạc Liêu</name><apiName>9.2941,105.7215</apiName><code>BL</code><region>Miền Nam</region></location>
+        <location><name>Cà Mau</name><apiName>Ca Mau</apiName><code>CM</code><region>Miền Nam</region></location>
+    </locations>
+
+</configuration>
