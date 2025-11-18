@@ -8,7 +8,7 @@
             <port>5432</port>
             <name>control</name>
             <username>postgres</username>
-            <password>123123</password>
+            <password>your_passwork</password>
             <url>jdbc:postgresql://localhost:5432/control</url>
         </control>
 
@@ -23,12 +23,12 @@
     </database>
 
     <!-- File Path Configuration -->
-    <paths>
-        <output>D:/weather_data/extract</output>
-        <archive>D:/weather_data/archive</archive>
-        <error>D:/weather_data/error</error>
-        <log>D:/weather_data/logs</log>
-    </paths>
+<!--    <paths>-->
+<!--        <output>D:/weather_data/extract</output>-->
+<!--        <archive>D:/weather_data/archive</archive>-->
+<!--        <error>D:/weather_data/error</error>-->
+<!--        <log>D:/weather_data/logs</log>-->
+<!--    </paths>-->
 
     <!-- Email Configuration -->
     <email>
