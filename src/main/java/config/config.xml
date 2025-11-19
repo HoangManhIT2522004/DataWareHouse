@@ -8,7 +8,7 @@
             <port>5432</port>
             <name>control</name>
             <username>postgres</username>
-            <password>your_passwork</password>
+            <password>123123</password>
             <url>jdbc:postgresql://localhost:5432/control</url>
         </control>
 
@@ -22,14 +22,6 @@
         </staging>
     </database>
 
-    <!-- File Path Configuration -->
-<!--    <paths>-->
-<!--        <output>D:/weather_data/extract</output>-->
-<!--        <archive>D:/weather_data/archive</archive>-->
-<!--        <error>D:/weather_data/error</error>-->
-<!--        <log>D:/weather_data/logs</log>-->
-<!--    </paths>-->
-
     <!-- Email Configuration -->
     <email>
         <enabled>true</enabled>
@@ -41,7 +33,7 @@
         </smtp>
         <from>
             <address>manhhoang2522004it@gmail.com</address>
-            <password></password>
+            <password>sbjecjoixsixmbso</password>
             <name>Weather ETL System</name>
         </from>
         <to>

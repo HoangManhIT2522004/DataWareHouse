@@ -130,26 +130,30 @@ public class ExtractToFile {
             Element configSource = LoadConfig.getChildElement(config, "configSource");
 
             String baseName = LoadConfig.getValue(configSource, "config_name");
+
             String today = java.time.LocalDate.now().format(
                     java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd")
             );
+
             String configName = baseName + "_" + today;
             String sourceType = LoadConfig.getValue(configSource, "source_type");
             String sourceUrl = LoadConfig.getValue(configSource, "source_url");
-            String outputPath = LoadConfig.getValue(configSource, "output_path");
+            String outputPathBase = LoadConfig.getValue(configSource, "output_path");
             boolean isActive = Boolean.parseBoolean(LoadConfig.getValue(configSource, "is_active"));
+
+            String fullOutputPath = ExtractWeatherData.generateDailyFileName(outputPathBase);
 
             System.out.println("[Step 4] Config info from XML:");
             System.out.println("  - Config Name   : " + configName);
             System.out.println("  - Source Type   : " + sourceType);
             System.out.println("  - Source URL    : " + sourceUrl);
-            System.out.println("  - Output Path   : " + outputPath);
+            System.out.println("  - Output Path   : " + fullOutputPath);
             System.out.println("  - Is Active     : " + isActive);
 
-            // Bước 1: Lấy config
+            // Bước 1: Lấy config với FULL PATH
             String getConfigSql = String.format(
                     "SELECT * FROM get_or_create_config('%s', '%s', '%s', '%s', %b)",
-                    configName, sourceType, sourceUrl, outputPath, isActive
+                    configName, sourceType, sourceUrl, fullOutputPath, isActive
             );
 
             final int[] configSrcId = {0};
@@ -190,9 +194,7 @@ public class ExtractToFile {
                 throw new Exception("Cannot create log");
             }
 
-            // Lưu execution_id để dùng trong finally
             currentExecutionId = executionId[0];
-
             System.out.println("[Step 4] Created execution: " + executionId[0]);
 
             return new ExtractWeatherData.ExtractInfo(

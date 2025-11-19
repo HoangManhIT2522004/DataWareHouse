@@ -37,9 +37,8 @@ public class ExtractWeatherData {
         System.out.println("  - Source URL   : " + dbSourceUrl);
 
         // Tạo tên file theo ngày: weatherapi_yyyymmdd.csv
-        String dailyFileName = generateDailyFileName(dbOutputPath);
 
-        System.out.println("  - Output Path  : " + dailyFileName);
+        System.out.println("  - Output Path  : " + dbOutputPath);
 
         int successCount = 0;
 
@@ -61,13 +60,13 @@ public class ExtractWeatherData {
                     .build();
 
             // Tạo thư mục cha nếu chưa tồn tại
-            java.nio.file.Path filePath = java.nio.file.Paths.get(dailyFileName);
+            java.nio.file.Path filePath = java.nio.file.Paths.get(dbOutputPath);
             if (filePath.getParent() != null) {
                 java.nio.file.Files.createDirectories(filePath.getParent());
             }
 
             // Tạo file CSV và ghi header
-            try (BufferedWriter writer = new BufferedWriter(new FileWriter(dailyFileName))) {
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(dbOutputPath))) {
                 // Ghi header
                 writer.write(getCsvHeader());
                 writer.newLine();
@@ -121,10 +120,10 @@ public class ExtractWeatherData {
                 System.out.println("\n[Step 5] Extract completed:");
                 System.out.println("  - Success: " + successCount);
                 System.out.println("  - Failed : " + failCount);
-                System.out.println("  - File   : " + dailyFileName);
+                System.out.println("  - File   : " + dbOutputPath);
 
                 // Gửi email báo cáo kết quả
-                sendExtractReport(executionId, successCount, failCount, failedLocations, dailyFileName);
+                sendExtractReport(executionId, successCount, failCount, failedLocations, dbOutputPath);
             }
 
         } catch (Exception e) {
@@ -142,7 +141,7 @@ public class ExtractWeatherData {
      * Nếu dbOutputPath là file path -> thay thế tên file
      * Chuẩn hóa path separator thành /
      */
-    private static String generateDailyFileName(String dbOutputPath) {
+    public static String generateDailyFileName(String dbOutputPath) {
         // Chuẩn hóa path separator thành /
         dbOutputPath = dbOutputPath.replace("\\", "/");
 
