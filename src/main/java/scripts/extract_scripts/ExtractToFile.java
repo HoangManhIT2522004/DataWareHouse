@@ -11,7 +11,6 @@ import java.time.format.DateTimeFormatter;
 public class ExtractToFile {
 
     private static DBConn controlDB;
-    private static String currentExecutionId = null;
 
     /**
      * ============================================================
@@ -87,7 +86,7 @@ public class ExtractToFile {
     public static void checkTodayExtractSuccess() {
         try {
             System.out.println("[Step 3] Checking today's extract status...");
-                String sql = "SELECT check_today_extract_success() AS success";
+            String sql = "SELECT check_today_extract_success() AS success";
             final boolean[] alreadyExtracted = {false};
 
             controlDB.executeQuery(sql, rs -> {
@@ -194,7 +193,7 @@ public class ExtractToFile {
                 throw new Exception("Cannot create log");
             }
 
-            currentExecutionId = executionId[0];
+            String currentExecutionId = executionId[0];
             System.out.println("[Step 4] Created execution: " + executionId[0]);
 
             return new ExtractWeatherData.ExtractInfo(
@@ -211,82 +210,14 @@ public class ExtractToFile {
         }
     }
 
-    /**
-     * ============================================================
-     * Update log status về SUCCESS
-     * ============================================================
-     */
-    public static void updateLogSuccess(String executionId, int recordsCount) {
-        try {
-            System.out.println("[Step 6] Updating log status to SUCCESS...");
-
-            // Sử dụng CALL thay vì SELECT cho procedure
-            String sql = String.format(
-                    "CALL update_log_status('%s', 'success'::src_status, %d, NULL)",
-                    executionId, recordsCount
-            );
-
-            // Nếu CALL không work, thử dùng DO block
-            String alternativeSql = String.format(
-                    "DO $ BEGIN PERFORM update_log_status('%s', 'success'::src_status, %d, NULL); END $",
-                    executionId, recordsCount
-            );
-
-            try {
-                controlDB.executeUpdate(sql);
-            } catch (Exception e1) {
-                // Fallback: Dùng UPDATE trực tiếp
-                String directUpdate = String.format(
-                        "UPDATE log_src SET status='success'::src_status, end_time=NOW(), " +
-                                "records_extracted=%d, error_message=NULL WHERE execution_id='%s'",
-                        recordsCount, executionId
-                );
-                controlDB.executeUpdate(directUpdate);
-            }
-
-            System.out.println("[Step 6] Log status updated to SUCCESS");
-        } catch (Exception e) {
-            System.err.println("[Step 6] FAILED: Cannot update log status");
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * ============================================================
-     * Update log status về FAILED
-     * ============================================================
-     */
-    public static void updateLogFailed(String executionId, String errorMessage) {
-        try {
-            System.out.println("[Cleanup] Updating log status to FAILED...");
-
-            // Escape single quotes
-            String escapedError = errorMessage != null ? errorMessage.replace("'", "''") : "";
-
-            // Dùng UPDATE trực tiếp để tránh vấn đề function signature
-            String sql = String.format(
-                    "UPDATE log_src SET status='failed'::src_status, end_time=NOW(), " +
-                            "records_extracted=0, error_message='%s' WHERE execution_id='%s'",
-                    escapedError, executionId
-            );
-
-            controlDB.executeUpdate(sql);
-            System.out.println("[Cleanup] Log status updated to FAILED");
-        } catch (Exception e) {
-            System.err.println("[Cleanup] Cannot update log status to FAILED: " + e.getMessage());
-        }
-    }
-
     public static void main(String[] args) {
         System.out.println("========================================");
         System.out.println("Weather ETL - Extract Process Started");
         System.out.println("========================================\n");
 
-        ExtractWeatherData.ExtractInfo extractInfo = null;
-
         try {
-            // Step 1: Load config chung (database connection)
-            LoadConfig config = loadConfig("D:/DataWareHouse/src/main/java/config/config.xml");
+            // Step 1: Load config
+            LoadConfig config = loadConfig("config/config.xml");
 
             // Step 2: Connect DB
             controlDB = connectDB(config);
@@ -294,87 +225,35 @@ public class ExtractToFile {
             // Step 3: Check extract hôm nay
             checkTodayExtractSuccess();
 
-            // Step 4: Load extract config riêng (locations, api, config source)
-            LoadConfig extractConfig = loadConfig("D:/DataWareHouse/src/main/java/scripts/extract_scripts/extract_config.xml");
+            // Step 4: Load extract config
+            LoadConfig extractConfig = loadConfig("config/extract_config.xml");
 
-            // Step 5: Lấy/Tạo config và tạo log
-            extractInfo = prepareExtract(extractConfig);
+            // Step 5: Prepare extract (tạo config & log)
+            ExtractWeatherData.ExtractInfo extractInfo = prepareExtract(extractConfig);
 
-            // Step 6: Extract weather data
-            int recordsExtracted = ExtractWeatherData.extractWeatherToFile(
-                    extractConfig,  // ← Dùng extractConfig (có locations)
+            // Step 6: Extract
+            ExtractWeatherData.extractWeatherToFile(
+                    extractConfig,
                     extractInfo.getExecutionId(),
                     extractInfo.getSourceUrl(),
-                    extractInfo.getOutputPath()
-            );
-
-            // Step 7: Update log status = SUCCESS
-            updateLogSuccess(extractInfo.getExecutionId(), recordsExtracted);
-
-            // Step 8: Gửi email thành công
-            String subject = "✓ Weather ETL - Extract Completed Successfully";
-            String body = String.format(
-                    "=== EXTRACT SUCCESS ===\n\n" +
-                            "Execution ID: %s\n" +
-                            "Records Extracted: %d\n" +
-                            "Output File: %s\n" +
-                            "Completion Time: %s\n\n" +
-                            "Status: SUCCESS",
-                    extractInfo.getExecutionId(),
-                    recordsExtracted,
                     extractInfo.getOutputPath(),
-                    LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+                    controlDB  // ← Pass DB connection
             );
-            EmailSender.sendEmail(subject, body);
 
+            // THÀNH CÔNG!
             System.out.println("\n========================================");
             System.out.println("Weather ETL - Extract Process COMPLETED");
             System.out.println("========================================");
             System.exit(0);
 
         } catch (Exception e) {
-            // Update log status = FAILED
-            if (currentExecutionId != null) {
-                updateLogFailed(currentExecutionId, e.getMessage());
-            }
-
-            // Gửi email lỗi
-            String subject = "✗ ERROR: Weather ETL - Extract Failed";
-            String body = String.format(
-                    "=== EXTRACT FAILED ===\n\n" +
-                            "Execution ID: %s\n" +
-                            "Error Time: %s\n" +
-                            "Error Message: %s\n\n" +
-                            "Stack Trace:\n%s\n\n" +
-                            "Status: FAILED",
-                    currentExecutionId != null ? currentExecutionId : "N/A",
-                    LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
-                    e.getMessage(),
-                    getStackTraceString(e)
-            );
-            EmailSender.sendError(subject, body, e);
-
+            // CÓ LỖI NGHIÊM TRỌNG
+            // (ExtractWeatherData đã tự update log và gửi email rồi)
             System.err.println("\n========================================");
             System.err.println("Weather ETL - Extract Process FAILED");
             System.err.println("========================================");
             e.printStackTrace();
             System.exit(1);
-
         }
-    }
-
-    /**
-     * Helper method để lấy stack trace dạng String
-     */
-    private static String getStackTraceString(Exception e) {
-        StringBuilder sb = new StringBuilder();
-        for (StackTraceElement element : e.getStackTrace()) {
-            sb.append("  at ").append(element.toString()).append("\n");
-            if (sb.length() > 1000) { // Giới hạn độ dài
-                sb.append("  ...");
-                break;
-            }
-        }
-        return sb.toString();
     }
 }

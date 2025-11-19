@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- Database Configuration -->
+    <database>
+        <control>
+            <host>localhost</host>
+            <port>5432</port>
+            <name>control</name>
+            <username>postgres</username>
+            <password>123123</password>
+            <url>jdbc:postgresql://localhost:5432/control</url>
+        </control>
+
+        <staging>
+            <host>localhost</host>
+            <port>5432</port>
+            <name>staging</name>
+            <username>postgres</username>
+            <password>your_password</password>
+            <url>jdbc:postgresql://localhost:5432/staging</url>
+        </staging>
+    </database>
+
+    <!-- Email Configuration -->
+    <email>
+        <enabled>true</enabled>
+        <smtp>
+            <host>smtp.gmail.com</host>
+            <port>587</port>
+            <auth>true</auth>
+            <starttls>true</starttls>
+        </smtp>
+        <from>
+            <address>manhhoang2522004it@gmail.com</address>
+            <password>sbjecjoixsixmbso</password>
+            <name>Weather ETL System</name>
+        </from>
+        <to>
+            <address>manhhoang2522004it@gmail.com</address>
+            <name>System Administrator</name>
+        </to>
+        <notifications>
+            <onSuccess>false</onSuccess>
+            <onError>true</onError>
+            <onFileExists>true</onFileExists>
+        </notifications>
+    </email>
+
+    <!-- ETL Process Configuration -->
+    <etl>
+        <checkFileExists>true</checkFileExists>
+        <archiveAfterLoad>true</archiveAfterLoad>
+        <retryOnFailure>3</retryOnFailure>
+        <retryDelay>5000</retryDelay>
+    </etl>
+
+    <!-- Logging Configuration -->
+    <logging>
+        <level>INFO</level>
+        <console>true</console>
+        <file>true</file>
+        <maxFileSize>10MB</maxFileSize>
+        <maxHistory>30</maxHistory>
+    </logging>
+
+    <!-- Scheduler Configuration -->
+    <scheduler>
+        <enabled>false</enabled>
+        <cronExpression>0 0 7 * * ?</cronExpression> <!-- Chạy lúc 7:00 AM mỗi ngày -->
+        <timezone>Asia/Ho_Chi_Minh</timezone>
+    </scheduler>
+
+</configuration>
