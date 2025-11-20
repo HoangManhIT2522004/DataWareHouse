@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
+import utils.DBConn;
 import utils.LoadConfig;
 
 import java.io.BufferedWriter;
@@ -22,31 +23,33 @@ public class ExtractWeatherData {
 
     /**
      * ============================================================
-     * Step 5: Extract weather data và ghi vào file CSV
-     * Trả về số lượng records đã extract thành công
+     * Extract weather data - TỰ XỬ LÝ TẤT CẢ
      * ============================================================
      */
-    public static int extractWeatherToFile(
+    public static void extractWeatherToFile(
             LoadConfig config,
             String executionId,
             String dbSourceUrl,
-            String dbOutputPath
+            String dbOutputPath,
+            DBConn controlDB
     ) {
         System.out.println("[Step 5] Extracting weather data...");
         System.out.println("  - Execution ID : " + executionId);
         System.out.println("  - Source URL   : " + dbSourceUrl);
-
-        // Tạo tên file theo ngày: weatherapi_yyyymmdd.csv
-        String dailyFileName = generateDailyFileName(dbOutputPath);
-
-        System.out.println("  - Output Path  : " + dailyFileName);
+        System.out.println("  - Output Path  : " + dbOutputPath);
 
         int successCount = 0;
+        int failCount = 0;
+        List<String> failedLocations = new ArrayList<>();
 
         try {
             // Lấy danh sách locations từ XML
             List<Location> locations = getLocationsFromConfig(config);
             System.out.println("  - Total locations: " + locations.size());
+
+            if (locations.isEmpty()) {
+                throw new RuntimeException("No locations found in config");
+            }
 
             // Lấy API config
             Element api = LoadConfig.getElement(config.getXmlDoc(), "api");
@@ -61,29 +64,23 @@ public class ExtractWeatherData {
                     .build();
 
             // Tạo thư mục cha nếu chưa tồn tại
-            java.nio.file.Path filePath = java.nio.file.Paths.get(dailyFileName);
+            java.nio.file.Path filePath = java.nio.file.Paths.get(dbOutputPath);
             if (filePath.getParent() != null) {
                 java.nio.file.Files.createDirectories(filePath.getParent());
             }
 
             // Tạo file CSV và ghi header
-            try (BufferedWriter writer = new BufferedWriter(new FileWriter(dailyFileName))) {
-                // Ghi header
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(dbOutputPath))) {
                 writer.write(getCsvHeader());
                 writer.newLine();
-
-                int failCount = 0;
-                List<String> failedLocations = new ArrayList<>();
 
                 // Extract data cho từng location
                 for (Location location : locations) {
                     try {
                         System.out.println("  Processing: " + location.getName() + " (" + location.getCode() + ")");
 
-                        // Build URL với apiName (có thể là tên hoặc tọa độ)
                         String url = buildApiUrl(baseUrl, apiKey, location.getApiName());
 
-                        // Gọi API
                         HttpRequest request = HttpRequest.newBuilder()
                                 .uri(URI.create(url))
                                 .timeout(Duration.ofMillis(timeout))
@@ -94,7 +91,6 @@ public class ExtractWeatherData {
                                 HttpResponse.BodyHandlers.ofString());
 
                         if (response.statusCode() == 200) {
-                            // Parse JSON và ghi vào CSV
                             String csvRow = parseWeatherResponse(response.body(), location, executionId);
                             writer.write(csvRow);
                             writer.newLine();
@@ -107,7 +103,6 @@ public class ExtractWeatherData {
                             failCount++;
                         }
 
-                        // Delay để tránh rate limit
                         Thread.sleep(100);
 
                     } catch (Exception e) {
@@ -117,52 +112,96 @@ public class ExtractWeatherData {
                         failCount++;
                     }
                 }
+            }
 
-                System.out.println("\n[Step 5] Extract completed:");
-                System.out.println("  - Success: " + successCount);
-                System.out.println("  - Failed : " + failCount);
-                System.out.println("  - File   : " + dailyFileName);
+            System.out.println("\n[Step 5] Extract completed:");
+            System.out.println("  - Success: " + successCount);
+            System.out.println("  - Failed : " + failCount);
+            System.out.println("  - File   : " + dbOutputPath);
 
-                // Gửi email báo cáo kết quả
-                sendExtractReport(executionId, successCount, failCount, failedLocations, dailyFileName);
+            // ✅ KIỂM TRA KẾT QUẢ
+            if (successCount == 0) {
+                // TẤT CẢ ĐỀU FAIL
+                String errorMsg = String.format(
+                        "Extract failed: 0/%d locations successful. All API calls failed.",
+                        locations.size()
+                );
+
+                // Update log = FAILED
+                updateLogFailed(controlDB, executionId, errorMsg);
+
+                // Gửi email ERROR
+                sendErrorEmail(executionId, errorMsg, failedLocations, dbOutputPath);
+
+                // Throw exception để caller biết
+                throw new RuntimeException(errorMsg);
+
+            } else if (failCount > 0) {
+                // MỘT SỐ FAIL, MỘT SỐ SUCCESS
+
+                // Update log = SUCCESS (nhưng có warning)
+                updateLogSuccess(controlDB, executionId, successCount);
+
+                // Gửi email REPORT (có cảnh báo)
+                sendExtractReport(executionId, successCount, failCount,
+                        failedLocations, dbOutputPath);
+
+            } else {
+                // TẤT CẢ THÀNH CÔNG
+
+                // Update log = SUCCESS
+                updateLogSuccess(controlDB, executionId, successCount);
+
+                // Gửi email SUCCESS
+                sendSuccessEmail(executionId, successCount, dbOutputPath);
             }
 
         } catch (Exception e) {
+            // ✅ BẮT LỖI BẤT NGỜ (không phải lỗi API)
             System.err.println("[Step 5] FAILED: Extract error");
             e.printStackTrace();
+
+            // Update log = FAILED
+            updateLogFailed(controlDB, executionId, e.getMessage());
+
+            // Gửi email ERROR
+            String subject = "✗ ERROR: Weather ETL - Extract Failed (System Error)";
+            String body = String.format(
+                    "=== EXTRACT FAILED ===\n\n" +
+                            "Execution ID: %s\n" +
+                            "Error Time: %s\n" +
+                            "Error Type: System/Infrastructure Error\n" +
+                            "Error Message: %s\n\n" +
+                            "Stack Trace:\n%s\n\n" +
+                            "Status: FAILED",
+                    executionId,
+                    LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+                    e.getMessage(),
+                    getStackTraceString(e)
+            );
+            utils.EmailSender.sendError(subject, body, e);
+
+            // Re-throw để caller biết
             throw new RuntimeException("Extract failed", e);
         }
-
-        return successCount;
     }
 
     /**
      * Tạo tên file theo ngày: weatherapi_yyyymmdd.csv
-     * Nếu dbOutputPath là thư mục -> tạo file mới trong thư mục đó
-     * Nếu dbOutputPath là file path -> thay thế tên file
-     * Chuẩn hóa path separator thành /
      */
-    private static String generateDailyFileName(String dbOutputPath) {
-        // Chuẩn hóa path separator thành /
+    public static String generateDailyFileName(String dbOutputPath) {
         dbOutputPath = dbOutputPath.replace("\\", "/");
-
-        // Format ngày: yyyyMMdd (VD: 20251118)
         String dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         String fileName = "weatherapi_" + dateStr + ".csv";
 
-        // Kiểm tra nếu dbOutputPath là thư mục hay file path
         if (dbOutputPath.endsWith("/")) {
-            // Là thư mục -> append tên file
             return dbOutputPath + fileName;
         } else {
-            // Là file path -> lấy thư mục cha và thay tên file
             int lastSeparator = dbOutputPath.lastIndexOf('/');
-
             if (lastSeparator != -1) {
                 String directory = dbOutputPath.substring(0, lastSeparator + 1);
                 return directory + fileName;
             } else {
-                // Không có thư mục -> tạo file ở thư mục hiện tại
                 return fileName;
             }
         }
@@ -193,11 +232,8 @@ public class ExtractWeatherData {
      * Build API URL với location name hoặc tọa độ
      */
     private static String buildApiUrl(String baseUrl, String apiKey, String locationQuery) {
-        // Extract base path từ baseUrl
         String[] parts = baseUrl.split("\\?");
         String basePath = parts[0];
-
-        // Build URL mới với location (có thể là tên hoặc lat,lon)
         return String.format("%s?key=%s&q=%s&aqi=yes",
                 basePath, apiKey, locationQuery.replace(" ", "%20"));
     }
@@ -227,14 +263,14 @@ public class ExtractWeatherData {
 
         String extractTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 
-        return String.format("%s,%s,%s,%s," +                    // execution_id, location info
-                        "%.1f,%.1f,%.1f,%.1f," +                 // temp, feels_like
-                        "%d,%.1f,%.1f,%d,%s," +                  // humidity, wind
-                        "%.1f,%.2f,%.1f,%.2f," +                 // pressure, precip
-                        "%d,%.1f,%.1f,%.1f," +                   // cloud, uv, vis
-                        "\"%s\",%d," +                           // condition
-                        "%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f," + // air quality
-                        "%s,%s",                                  // timestamps
+        return String.format("%s,%s,%s,%s," +
+                        "%.1f,%.1f,%.1f,%.1f," +
+                        "%d,%.1f,%.1f,%d,%s," +
+                        "%.1f,%.2f,%.1f,%.2f," +
+                        "%d,%.1f,%.1f,%.1f," +
+                        "\"%s\",%d," +
+                        "%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f," +
+                        "%s,%s",
                 executionId,
                 escapeComma(location.getName()),
                 location.getCode(),
@@ -282,12 +318,81 @@ public class ExtractWeatherData {
     }
 
     /**
-     * Gửi email báo cáo kết quả extract
+     * Update log status về SUCCESS
+     */
+    private static void updateLogSuccess(DBConn controlDB, String executionId, int recordsCount) {
+        try {
+            System.out.println("[Step 5] Updating log status to SUCCESS...");
+
+            String sql = String.format(
+                    "UPDATE log_src SET status='success'::src_status, end_time=NOW(), " +
+                            "records_extracted=%d, error_message=NULL WHERE execution_id='%s'",
+                    recordsCount, executionId
+            );
+
+            controlDB.executeUpdate(sql);
+            System.out.println("[Step 5] Log status updated to SUCCESS");
+        } catch (Exception e) {
+            System.err.println("[Step 5] WARNING: Cannot update log status: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Update log status về FAILED
+     */
+    private static void updateLogFailed(DBConn controlDB, String executionId, String errorMessage) {
+        try {
+            System.out.println("[Step 5] Updating log status to FAILED...");
+
+            String escapedError = errorMessage != null ? errorMessage.replace("'", "''") : "";
+
+            String sql = String.format(
+                    "UPDATE log_src SET status='failed'::src_status, end_time=NOW(), " +
+                            "records_extracted=0, error_message='%s' WHERE execution_id='%s'",
+                    escapedError, executionId
+            );
+
+            controlDB.executeUpdate(sql);
+            System.out.println("[Step 5] Log status updated to FAILED");
+        } catch (Exception e) {
+            System.err.println("[Step 5] WARNING: Cannot update log status: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Gửi email SUCCESS (tất cả locations thành công)
+     */
+    private static void sendSuccessEmail(String executionId, int successCount, String outputFile) {
+        try {
+            String subject = "✓ Weather ETL - Extract Completed Successfully";
+            String body = String.format(
+                    "=== EXTRACT SUCCESS ===\n\n" +
+                            "Execution ID: %s\n" +
+                            "Records Extracted: %d\n" +
+                            "Output File: %s\n" +
+                            "Completion Time: %s\n\n" +
+                            "✓ All %d locations extracted successfully!\n\n" +
+                            "Status: SUCCESS",
+                    executionId,
+                    successCount,
+                    outputFile,
+                    LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+                    successCount
+            );
+            utils.EmailSender.sendEmail(subject, body);
+            System.out.println("[Step 5] Success email sent");
+        } catch (Exception e) {
+            System.err.println("[Step 5] Failed to send success email: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Gửi email REPORT (một số thành công, một số fail)
      */
     private static void sendExtractReport(String executionId, int successCount, int failCount,
                                           List<String> failedLocations, String outputFile) {
         try {
-            String subject = String.format("Weather ETL - Extract Report [%s]", executionId);
+            String subject = String.format("⚠ Weather ETL - Extract Completed with Warnings [%s]", executionId);
             StringBuilder body = new StringBuilder();
             body.append("=== EXTRACT REPORT ===\n\n");
             body.append("Execution ID: ").append(executionId).append("\n");
@@ -297,31 +402,73 @@ public class ExtractWeatherData {
 
             body.append("--- SUMMARY ---\n");
             body.append("Total Locations: ").append(successCount + failCount).append("\n");
-            body.append("Success: ").append(successCount).append("\n");
-            body.append("Failed: ").append(failCount).append("\n\n");
+            body.append("✓ Success: ").append(successCount).append("\n");
+            body.append("✗ Failed: ").append(failCount).append("\n\n");
 
-            if (failCount > 0) {
-                body.append("--- FAILED LOCATIONS ---\n");
-                for (int i = 0; i < failedLocations.size(); i++) {
-                    body.append(String.format("%d. %s\n", i + 1, failedLocations.get(i)));
-                }
-                body.append("\nVui lòng kiểm tra:\n");
-                body.append("- API key có còn hợp lệ?\n");
-                body.append("- Tên tỉnh thành có đúng format?\n");
-                body.append("- Network connection?\n");
-                body.append("- Rate limit của API?\n");
-            } else {
-                body.append("✓ All locations extracted successfully!\n");
+            body.append("--- FAILED LOCATIONS ---\n");
+            for (int i = 0; i < failedLocations.size(); i++) {
+                body.append(String.format("%d. %s\n", i + 1, failedLocations.get(i)));
             }
+            body.append("\nVui lòng kiểm tra:\n");
+            body.append("- API key có còn hợp lệ?\n");
+            body.append("- Tên tỉnh thành có đúng format?\n");
+            body.append("- Network connection?\n");
+            body.append("- Rate limit của API?\n\n");
+            body.append("Status: SUCCESS (with warnings)");
 
-            // Import EmailSender từ utils
             utils.EmailSender.sendEmail(subject, body.toString());
-            System.out.println("[Step 5] Extract report email sent successfully");
-
+            System.out.println("[Step 5] Extract report email sent");
         } catch (Exception e) {
-            System.err.println("[Step 5] Failed to send extract report email: " + e.getMessage());
-            e.printStackTrace();
+            System.err.println("[Step 5] Failed to send report email: " + e.getMessage());
         }
+    }
+
+    /**
+     * Gửi email ERROR (tất cả locations fail)
+     */
+    private static void sendErrorEmail(String executionId, String errorMessage,
+                                       List<String> failedLocations, String outputFile) {
+        try {
+            String subject = "✗ ERROR: Weather ETL - Extract Failed";
+            StringBuilder body = new StringBuilder();
+            body.append("=== EXTRACT FAILED ===\n\n");
+            body.append("Execution ID: ").append(executionId).append("\n");
+            body.append("Error Time: ").append(LocalDateTime.now()
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))).append("\n");
+            body.append("Output File: ").append(outputFile).append("\n");
+            body.append("Error Message: ").append(errorMessage).append("\n\n");
+
+            body.append("--- ALL LOCATIONS FAILED ---\n");
+            for (int i = 0; i < failedLocations.size(); i++) {
+                body.append(String.format("%d. %s\n", i + 1, failedLocations.get(i)));
+            }
+            body.append("\nVui lòng kiểm tra NGAY:\n");
+            body.append("- API key có còn hợp lệ không?\n");
+            body.append("- API service có đang down không?\n");
+            body.append("- Network connection?\n");
+            body.append("- Firewall/Proxy settings?\n\n");
+            body.append("Status: FAILED");
+
+            utils.EmailSender.sendError(subject, body.toString(), new RuntimeException(errorMessage));
+            System.out.println("[Step 5] Error email sent");
+        } catch (Exception e) {
+            System.err.println("[Step 5] Failed to send error email: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Helper: Get stack trace as string
+     */
+    private static String getStackTraceString(Exception e) {
+        StringBuilder sb = new StringBuilder();
+        for (StackTraceElement element : e.getStackTrace()) {
+            sb.append("  at ").append(element.toString()).append("\n");
+            if (sb.length() > 1000) {
+                sb.append("  ...");
+                break;
+            }
+        }
+        return sb.toString();
     }
 
     /**
@@ -355,8 +502,8 @@ public class ExtractWeatherData {
      * Inner class để lưu location info
      */
     static class Location {
-        private final String name;      // Tên hiển thị (có dấu)
-        private final String apiName;   // Tên/Tọa độ dùng cho API
+        private final String name;
+        private final String apiName;
         private final String code;
         private final String region;
 

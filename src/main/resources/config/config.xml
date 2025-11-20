@@ -8,7 +8,7 @@
             <port>5432</port>
             <name>control</name>
             <username>postgres</username>
-            <password></password>
+            <password>your_passwork</password>
             <url>jdbc:postgresql://localhost:5432/control</url>
         </control>
 
@@ -55,7 +55,7 @@
             <name>Weather ETL System</name>
         </from>
         <to>
-            <address></address>
+            <address>manhhoang2522004it@gmail.com</address>
             <name>System Administrator</name>
         </to>
         <notifications>

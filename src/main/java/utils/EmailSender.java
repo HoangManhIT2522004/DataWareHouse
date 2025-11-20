@@ -19,7 +19,7 @@ public class EmailSender {
 
     static {
         try {
-            LoadConfig config = new LoadConfig("D:\\DataWareHouse\\src\\main\\java\\config\\config.xml");
+            LoadConfig config = new LoadConfig("config/config.xml");
 
             // SMTP
             Element smtp = (Element) config.getXmlDoc().getElementsByTagName("smtp").item(0);

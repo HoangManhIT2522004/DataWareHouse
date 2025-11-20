@@ -4,17 +4,24 @@ import org.w3c.dom.Element;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.InputStream;
 
 public class LoadConfig {
 
     private final Document xmlDoc;
 
-    public LoadConfig(String path) throws Exception {
-        File file = new File(path);
-        DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
-        DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
-        xmlDoc = dBuilder.parse(file);
-        xmlDoc.getDocumentElement().normalize();
+    public LoadConfig(String resourcePath) throws Exception {
+        // Lấy file từ resources trong JAR
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream(resourcePath)) {
+            if (is == null) {
+                throw new FileNotFoundException("Resource not found: " + resourcePath);
+            }
+            DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
+            DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
+            xmlDoc = dBuilder.parse(is);
+            xmlDoc.getDocumentElement().normalize();
+        }
     }
 
     /** Lấy Element con đầu tiên từ Document root */
