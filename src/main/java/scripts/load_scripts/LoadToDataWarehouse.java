@@ -47,10 +47,10 @@ public class LoadToDataWarehouse {
                 int total = loc + cond + fact + aqi;
 
                 updateLogSuccess(total);
-                sendSuccessEmail(total, attempt);
+                sendSuccessEmail(loc, cond, fact, aqi, total, attempt);
 
                 System.out.println("\nLOAD HOÀN TẤT THÀNH CÔNG! (lần thứ " + attempt + ")");
-                System.out.println("Tổng cộng: " + total + " bản ghi đã được load vào Warehouse");
+                System.out.println("Tổng cộng: " + String.format("%,d", total) + " bản ghi đã được load vào Warehouse");
                 System.exit(0);
 
             } catch (Exception e) {
@@ -76,7 +76,6 @@ public class LoadToDataWarehouse {
                     System.exit(1);
                 }
             }
-            // KHÔNG CẦN finally ĐÓNG GÌ CẢ – try-with-resources trong DBConn đã lo hết rồi!
 
             attempt++;
         }
@@ -133,7 +132,7 @@ public class LoadToDataWarehouse {
         warehouseDB.executeQuery("SELECT " + functionName + "() AS rows", rs -> {
             if (rs.next()) count[0] = rs.getInt("rows");
         });
-        System.out.println("   Hoàn thành: " + count[0] + " bản ghi");
+        System.out.println("   Hoàn thành: " + String.format("%,d", count[0]) + " bản ghi");
         return count[0];
     }
 
@@ -153,38 +152,89 @@ public class LoadToDataWarehouse {
         } catch (Exception ignored) {}
     }
 
-    private static void sendSuccessEmail(int total, int attempt) {
-        String body = """
-            WEATHER ETL - LOAD TO WAREHOUSE THÀNH CÔNG
-            
-            Execution ID   : %s
-            Thời gian      : %s
-            Số lần thử     : %d
-            Tổng bản ghi   : %,d
-            
-            Trạng thái: SUCCESS %s
-            """.formatted(currentExecutionId, LocalDateTime.now().format(dtf), attempt, total,
-                (attempt > 1 ? "(sau khi tự động retry)" : ""));
-        EmailSender.sendEmail("Weather ETL - Load Warehouse SUCCESS", body);
+    // ================== EMAIL BÁO CÁO MỚI - ĐẸP NHƯ EXTRACT ==================
+
+    private static void sendSuccessEmail(int loc, int cond, int fact, int aqi, int total, int attempt) {
+        String subject = "Weather ETL - LOAD TO WAREHOUSE THÀNH CÔNG " +
+                (attempt > 1 ? "(Sau " + (attempt - 1) + " lần retry)" : "");
+
+        StringBuilder body = new StringBuilder();
+        body.append("======================================\n");
+        body.append("   WEATHER ETL - LOAD TO DATA WAREHOUSE   \n");
+        body.append("          HOÀN TẤT THÀNH CÔNG           \n");
+        body.append("======================================\n\n");
+
+        body.append("Execution ID       : ").append(currentExecutionId).append("\n");
+        body.append("Thời gian kết thúc : ").append(LocalDateTime.now().format(dtf)).append("\n");
+        body.append("Số lần thử         : ").append(attempt)
+                .append(attempt > 1 ? " (tự động retry thành công)" : " (thành công ngay lần đầu)").append("\n");
+        body.append("Tổng bản ghi       : ").append(String.format("%,d", total)).append(" records\n\n");
+
+        body.append("--- CHI TIẾT LOAD ---\n");
+        body.append(String.format("✓ load_dim_location          : %,d bản ghi\n", loc));
+        body.append(String.format("✓ load_dim_weather_condition : %,d bản ghi\n", cond));
+        body.append(String.format("✓ load_fact_weather_daily    : %,d bản ghi\n", fact));
+        body.append(String.format("✓ load_fact_air_quality_daily: %,d bản ghi\n", aqi));
+        body.append("\n");
+
+        body.append("Tất cả dữ liệu đã được load thành công vào Data Warehouse.\n");
+        body.append("Hệ thống đang hoạt động ổn định.\n\n");
+
+        body.append("Thời gian báo cáo: ")
+                .append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")));
+
+        EmailSender.sendEmail(subject, body.toString());
+        System.out.println("Đã gửi email báo thành công!");
     }
 
     private static void sendErrorEmail(Exception e, int attempt) {
-        String status = attempt < MAX_RETRIES
-                ? "Hệ thống sẽ tự động thử lại sau 15 phút..."
-                : "ĐÃ THỬ HẾT " + MAX_RETRIES + " LẦN → DỪNG HOÀN TOÀN!";
+        boolean isFinalFailure = attempt >= MAX_RETRIES;
 
-        String body = """
-            WEATHER ETL - LOAD TO WAREHOUSE THẤT BẠI (lần %d/%d)
-            
-            Execution ID : %s
-            Thời gian    : %s
-            Lỗi          : %s
-            
-            %s
-            """.formatted(attempt, MAX_RETRIES,
-                currentExecutionId != null ? currentExecutionId : "N/A",
-                LocalDateTime.now().format(dtf), e.getMessage(), status);
+        String subject = isFinalFailure
+                ? "Weather ETL - LOAD TO WAREHOUSE THẤT BẠI HOÀN TOÀN (sau " + MAX_RETRIES + " lần)"
+                : "Weather ETL - LOAD TO WAREHOUSE THẤT BẠI (lần " + attempt + "/" + MAX_RETRIES + ")";
 
-        EmailSender.sendError("Weather ETL - Load Warehouse FAILED (lần " + attempt + ")", body, e);
+        StringBuilder body = new StringBuilder();
+        body.append("======================================\n");
+        body.append("   WEATHER ETL - LOAD TO DATA WAREHOUSE   \n");
+        body.append(isFinalFailure ? "        THẤT BẠI HOÀN TOÀN        \n" : "          ĐANG CÓ LỖI (retry)         \n");
+        body.append("======================================\n\n");
+
+        body.append("Execution ID : ").append(currentExecutionId != null ? currentExecutionId : "N/A").append("\n");
+        body.append("Lần thử      : ").append(attempt).append("/").append(MAX_RETRIES).append("\n");
+        body.append("Thời gian    : ").append(LocalDateTime.now().format(dtf)).append("\n\n");
+
+        body.append("--- THÔNG TIN LỖI ---\n");
+        body.append("Message : ").append(e.getMessage() != null ? e.getMessage() : "null").append("\n");
+        body.append("Class   : ").append(e.getClass().getName()).append("\n\n");
+
+        body.append("--- STACK TRACE (5 dòng đầu) ---\n");
+        StackTraceElement[] stack = e.getStackTrace();
+        for (int i = 0; i < Math.min(5, stack.length); i++) {
+            body.append("   at ").append(stack[i].toString()).append("\n");
+        }
+        if (stack.length > 5) body.append("   ... (và ").append(stack.length - 5).append(" dòng nữa)\n");
+
+        body.append("\n");
+
+        if (!isFinalFailure) {
+            body.append("Hệ thống sẽ tự động thử lại lần ").append(attempt + 1)
+                    .append(" sau ").append(RETRY_DELAY_MINUTES).append(" phút.\n");
+            body.append("Không cần can thiệp ngay lúc này.\n");
+        } else {
+            body.append("ĐÃ THỬ HẾT ").append(MAX_RETRIES).append(" LẦN → DỪNG HOÀN TOÀN!\n");
+            body.append("Cần kiểm tra khẩn cấp:\n");
+            body.append("- Kết nối Control DB / Data Warehouse?\n");
+            body.append("- Các function load_* có bị lỗi logic?\n");
+            body.append("- Quyền truy cập database?\n");
+            body.append("- Transaction log full / disk full?\n");
+            body.append("- Network timeout?\n");
+        }
+
+        body.append("\nThời gian báo cáo: ")
+                .append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")));
+
+        EmailSender.sendError(subject, body.toString(), e);
+        System.out.println("Đã gửi email báo lỗi!");
     }
 }
