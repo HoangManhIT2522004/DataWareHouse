@@ -8,7 +8,7 @@
             <port>5432</port>
             <name>control</name>
             <username>postgres</username>
-            <password>your_passwork</password>
+            <password></password>
             <url>jdbc:postgresql://localhost:5432/control</url>
         </control>
 
@@ -20,6 +20,16 @@
             <password>your_password</password>
             <url>jdbc:postgresql://localhost:5432/staging</url>
         </staging>
+
+        <datawarehouse>
+            <host>localhost</host>
+            <port>5432</port>
+            <name>warehouse</name>
+            <username>postgres</username>
+            <password></password>
+            <url>jdbc:postgresql://localhost:5432/warehouse</url>
+        </datawarehouse>
+
     </database>
 
     <!-- File Path Configuration -->
@@ -45,7 +55,7 @@
             <name>Weather ETL System</name>
         </from>
         <to>
-            <address>manhhoang2522004it@gmail.com</address>
+            <address></address>
             <name>System Administrator</name>
         </to>
         <notifications>
