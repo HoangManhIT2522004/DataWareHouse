@@ -8,7 +8,7 @@
             <port>5432</port>
             <name>control</name>
             <username>postgres</username>
-            <password></password>
+            <password>your_passwork</password>
             <url>jdbc:postgresql://localhost:5432/control</url>
         </control>
 
@@ -20,7 +20,25 @@
             <password>your_password</password>
             <url>jdbc:postgresql://localhost:5432/staging</url>
         </staging>
+
+        <datawarehouse>
+            <host>localhost</host>
+            <port>5432</port>
+            <name>warehouse</name>
+            <username>postgres</username>
+            <password></password>
+            <url>jdbc:postgresql://localhost:5432/warehouse</url>
+        </datawarehouse>
+
     </database>
+
+    <!-- File Path Configuration -->
+<!--    <paths>-->
+<!--        <output>D:/weather_data/extract</output>-->
+<!--        <archive>D:/weather_data/archive</archive>-->
+<!--        <error>D:/weather_data/error</error>-->
+<!--        <log>D:/weather_data/logs</log>-->
+<!--    </paths>-->
 
     <!-- Email Configuration -->
     <email>
