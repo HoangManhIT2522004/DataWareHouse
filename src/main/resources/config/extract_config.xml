@@ -28,10 +28,10 @@
          ==================================================================== -->
     <config>
         <configSource>
-            <config_name>WA_Extract</config_name>
+            <config_name>weather_local_RUN</config_name>
             <source_type>api</source_type>
             <source_url>https://api.weatherapi.com/v1/current.json?key=4e10d60eb8384de694031201251710&amp;q=Hanoi&amp;aqi=yes</source_url>
-            <output_path>D:/DataWareHouse/src/main/java/data/</output_path>
+            <output_path>data/</output_path>
             <is_active>true</is_active>
         </configSource>
     </config>

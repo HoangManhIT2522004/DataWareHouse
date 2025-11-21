@@ -124,7 +124,7 @@
                         <configuration>
                             <archive>
                                 <manifest>
-                                    <mainClass>scripts.load_scripts.LoadToStaging</mainClass>
+                                    <mainClass>scripts.load_scripts.load_to_staging</mainClass>
                                 </manifest>
                             </archive>
                             <descriptorRefs>

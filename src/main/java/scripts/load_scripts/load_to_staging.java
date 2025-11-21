@@ -46,7 +46,7 @@ public class load_to_staging {
 
             // 4. Kiểm tra file CSV đầu vào
             String dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-            String csvPath = "D:/DataWareHouse/src/main/java/data/weatherapi_" + dateStr + ".csv";
+            String csvPath = "data/weatherapi_" + dateStr + ".csv";
             File file = new File(csvPath);
 
             if (!file.exists()) {
