@@ -1,7 +1,7 @@
 package scripts.load_scripts;
 
 import utils.DBConn;
-import utils.EmailSender; // Import module gửi mail
+import utils.EmailSender;
 import utils.LoadConfig;
 import org.w3c.dom.Element;
 import com.google.gson.Gson;
@@ -19,7 +19,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 
-public class load_to_staging {
+public class LoadToStaging {
 
     public static void main(String[] args) {
         // Lấy ngày hiện tại để định vị file CSV

@@ -8,7 +8,7 @@
             <port>5432</port>
             <name>control</name>
             <username>postgres</username>
-            <password>your_passwork</password>
+            <password></password>
             <url>jdbc:postgresql://localhost:5432/control</url>
         </control>
 
@@ -17,7 +17,7 @@
             <port>5432</port>
             <name>staging</name>
             <username>postgres</username>
-            <password>your_password</password>
+            <password></password>
             <url>jdbc:postgresql://localhost:5432/staging</url>
         </staging>
 

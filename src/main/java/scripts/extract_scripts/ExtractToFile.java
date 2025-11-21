@@ -12,9 +12,17 @@ public class ExtractToFile {
 
     private static DBConn controlDB;
 
+    // ✅ STATIC BLOCK FOR DEBUG
+    static {
+        System.out.println("=== ExtractToFile CLASS LOADED ===");
+        System.out.println("Java Version: " + System.getProperty("java.version"));
+        System.out.println("Working Directory: " + System.getProperty("user.dir"));
+        System.out.println("Classpath: " + System.getProperty("java.class.path"));
+    }
+
     /**
      * ============================================================
-     * Step 1: Load cấu hình từ file XML
+     * Step 1: Load configuration from XML file
      * ============================================================
      */
     public static LoadConfig loadConfig(String path) {
@@ -25,12 +33,12 @@ public class ExtractToFile {
             return config;
         } catch (Exception e) {
             String subject = "ERROR: Load Configuration Failed";
-            String body = "Không thể load file cấu hình từ đường dẫn: " + path +
-                    "\n\nVui lòng kiểm tra:\n" +
-                    "- File có tồn tại không?\n" +
-                    "- Đường dẫn có chính xác không?\n" +
-                    "- File có quyền đọc không?\n" +
-                    "- Cấu trúc XML có hợp lệ không?";
+            String body = "Unable to load configuration file from path: " + path +
+                    "\n\nPlease verify:\n" +
+                    "- Does the file exist?\n" +
+                    "- Is the path correct?\n" +
+                    "- Does the file have read permissions?\n" +
+                    "- Is the XML structure valid?";
             EmailSender.sendError(subject, body, e);
             System.err.println("[Step 1] FAILED: Cannot load config file");
             e.printStackTrace();
@@ -41,7 +49,7 @@ public class ExtractToFile {
 
     /**
      * ============================================================
-     * Step 2: Kết nối database
+     * Step 2: Connect to database
      * ============================================================
      */
     public static DBConn connectDB(LoadConfig config) {
@@ -65,11 +73,11 @@ public class ExtractToFile {
 
         } catch (Exception e) {
             String subject = "ERROR: Database Connection Failed";
-            String body = "Không thể kết nối đến database.\n\n" +
-                    "Vui lòng kiểm tra:\n" +
-                    "- Database server có đang chạy không?\n" +
-                    "- Thông tin kết nối (url, username, password) có chính xác không?\n" +
-                    "- Network có kết nối được không?";
+            String body = "Unable to connect to database.\n\n" +
+                    "Please verify:\n" +
+                    "- Is the database server running?\n" +
+                    "- Are the connection details (url, username, password) correct?\n" +
+                    "- Is the network connection available?";
             EmailSender.sendError(subject, body, e);
             System.err.println("[Step 2] FAILED: Cannot connect to database");
             e.printStackTrace();
@@ -80,7 +88,7 @@ public class ExtractToFile {
 
     /**
      * ============================================================
-     * Step 3: Kiểm tra extract hôm nay
+     * Step 3: Check today's extract status
      * ============================================================
      */
     public static void checkTodayExtractSuccess() {
@@ -96,11 +104,11 @@ public class ExtractToFile {
             });
 
             if (alreadyExtracted[0]) {
-                String subject = "Weather ETL - Extract Already Done Today";
-                String body = "Hệ thống phát hiện hôm nay đã có tiến trình extract thành công.\n\n" +
-                        "Thời gian: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                String subject = "Weather ETL - Extract Already Completed Today";
+                String body = "The system detected that extraction has already been completed successfully today.\n\n" +
+                        "Time: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
                 EmailSender.sendEmail(subject, body);
-                System.out.println("[Step 3] Extract đã thực hiện hôm nay, dừng chương trình.");
+                System.out.println("[Step 3] Extract already completed today, stopping process.");
                 System.exit(0);
             } else {
                 System.out.println("[Step 3] No extract success found today, proceeding...");
@@ -108,7 +116,7 @@ public class ExtractToFile {
 
         } catch (Exception e) {
             String subject = "ERROR: Check Today Extract Failed";
-            String body = "Lỗi khi kiểm tra trạng thái extract hôm nay";
+            String body = "Error occurred while checking today's extract status";
             EmailSender.sendError(subject, body, e);
             System.err.println("[Step 3] FAILED: Error checking today's extract");
             e.printStackTrace();
@@ -118,7 +126,7 @@ public class ExtractToFile {
 
     /**
      * ============================================================
-     * Step 4: Chuẩn bị cho extract, Tạo/lấy config và tạo log mới
+     * Step 4: Prepare for extract, create/get config and create new log
      * ============================================================
      */
     public static ExtractWeatherData.ExtractInfo prepareExtract(LoadConfig c) {
@@ -149,7 +157,7 @@ public class ExtractToFile {
             System.out.println("  - Output Path   : " + fullOutputPath);
             System.out.println("  - Is Active     : " + isActive);
 
-            // Bước 1: Lấy config với FULL PATH
+            // Step 1: Get config with FULL PATH
             String getConfigSql = String.format(
                     "SELECT * FROM get_or_create_config('%s', '%s', '%s', '%s', %b)",
                     configName, sourceType, sourceUrl, fullOutputPath, isActive
@@ -176,7 +184,7 @@ public class ExtractToFile {
             System.out.println("  - Source URL    : " + dbSourceUrl[0]);
             System.out.println("  - Output Path   : " + dbOutputPath[0]);
 
-            // Bước 2: Tạo log mới
+            // Step 2: Create new log
             String createLogSql = String.format(
                     "SELECT create_new_log(%d) AS execution_id",
                     configSrcId[0]
@@ -222,13 +230,13 @@ public class ExtractToFile {
             // Step 2: Connect DB
             controlDB = connectDB(config);
 
-            // Step 3: Check extract hôm nay
+            // Step 3: Check extract today
             checkTodayExtractSuccess();
 
             // Step 4: Load extract config
             LoadConfig extractConfig = loadConfig("config/extract_config.xml");
 
-            // Step 5: Prepare extract (tạo config & log)
+            // Step 5: Prepare extract (create config & log)
             ExtractWeatherData.ExtractInfo extractInfo = prepareExtract(extractConfig);
 
             // Step 6: Extract
@@ -240,15 +248,15 @@ public class ExtractToFile {
                     controlDB  // ← Pass DB connection
             );
 
-            // THÀNH CÔNG!
+            // SUCCESS!
             System.out.println("\n========================================");
             System.out.println("Weather ETL - Extract Process COMPLETED");
             System.out.println("========================================");
             System.exit(0);
 
         } catch (Exception e) {
-            // CÓ LỖI NGHIÊM TRỌNG
-            // (ExtractWeatherData đã tự update log và gửi email rồi)
+            // CRITICAL ERROR
+            // (ExtractWeatherData has already updated log and sent email)
             System.err.println("\n========================================");
             System.err.println("Weather ETL - Extract Process FAILED");
             System.err.println("========================================");
