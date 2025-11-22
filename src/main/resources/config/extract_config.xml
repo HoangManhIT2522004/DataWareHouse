@@ -6,7 +6,7 @@
     <control>
         <url>jdbc:postgresql://localhost:5432/control</url>
         <username>postgres</username>
-        <password>your_password</password>
+        <password>12345</password>
     </control>
 
     <!-- ====================================================================
