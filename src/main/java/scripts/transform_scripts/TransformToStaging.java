@@ -5,7 +5,12 @@ import utils.EmailSender;
 import utils.LoadConfig;
 import org.w3c.dom.Element;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Statement;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 public class TransformToStaging {
 
@@ -14,385 +19,242 @@ public class TransformToStaging {
 
     public static void main(String[] args) {
         System.out.println("========================================");
-        System.out.println("   WEATHER ETL - STEP 7 & 8: TRANSFORM & LOAD TO DW (IN STAGING DB)");
+        System.out.println("   WEATHER ETL - STEP 7: TRANSFORM (FACT FULL)");
         System.out.println("========================================");
 
-        String processName = "WA_Transform_Staging";
-        String execId = "";
+        String execId = null;
 
         try {
-            // 1. Load Config
             LoadConfig config = new LoadConfig("config/config.xml");
-
-            // 2. Kết nối DB
             controlDB = connectControlDB(config);
             stagingDB = connectStagingDB(config);
 
-            // 3. Kiểm tra xem hôm nay đã chạy chưa
-            if (checkTodayProcessSuccess(processName)) {
-                System.out.println("⚠️ Hôm nay đã chạy Transform & Load thành công. Dừng tiến trình.");
-                System.exit(0);
-            }
+            checkTodayProcessSuccess();
 
-            // 4. Tạo Log Process (Running)
-            execId = "TR_" + System.currentTimeMillis();
-            logProcess(execId, processName, "running", "Starting transformation and load...");
+            // Log process
+            execId = prepareTransformProcess();
 
-            // 5. Truncate bảng Staging
-            truncateStagingTables();
+            // Thực hiện Transform
+            int totalRows = transformData(execId);
 
-            // ============================================================
-            // A. TRANSFORM (RAW -> STAGING)
-            // ============================================================
-            System.out.println("\n--- A. TRANSFORM (RAW -> STAGING) ---");
-
-            // 6. Transform: Location
-            System.out.println(" [1/4] Transforming Locations...");
-            int locCount = transformLocation();
-            System.out.println("   -> Inserted " + locCount + " rows into stg_location.");
-
-            // 7. Transform: Weather Condition
-            System.out.println(" [2/4] Transforming Conditions...");
-            int condCount = transformCondition();
-            System.out.println("   -> Inserted " + condCount + " rows into stg_weather_condition.");
-
-            // 8. Transform: Air Quality
-            System.out.println(" [3/4] Transforming Air Quality...");
-            int airCount = transformAirQuality();
-            System.out.println("   -> Inserted " + airCount + " rows into stg_air_quality.");
-
-            // 9. Transform: Weather Observation
-            System.out.println(" [4/4] Transforming Observations...");
-            int obsCount = transformObservation();
-            System.out.println("   -> Inserted " + obsCount + " rows into stg_weather_observation.");
-
-            int totalTransformedRows = locCount + condCount + airCount + obsCount;
-
-            // ============================================================
-            // B. LOAD (STAGING -> DATA WAREHOUSE)
-            // ============================================================
-            System.out.println("\n--- B. LOAD (STAGING -> DATA WAREHOUSE) ---");
-
-            // 10. Load Dim_Location (SCD1)
-            System.out.println(" [1/4] Loading Dim_Location (SCD1)...");
-            int dimLocCount = loadDimLocation();
-            System.out.println("   -> Dim_Location: Affected " + dimLocCount + " rows.");
-
-            // 11. Load Dim_Weather_Condition (SCD1)
-            System.out.println(" [2/4] Loading Dim_Weather_Condition (SCD1)...");
-            int dimCondCount = loadDimWeatherCondition();
-            System.out.println("   -> Dim_Condition: Affected " + dimCondCount + " rows.");
-
-            // 12. Load Fact_Air_Quality (Snapshot Load)
-            System.out.println(" [3/4] Loading Fact_Air_Quality...");
-            int factAirCount = loadFactAirQualityDaily();
-            System.out.println("   -> Fact_Air_Quality: Inserted " + factAirCount + " rows.");
-
-            // 13. Load Fact_Weather_Observation (Snapshot Load)
-            System.out.println(" [4/4] Loading Fact_Weather_Observation...");
-            int factObsCount = loadFactWeatherDaily();
-            System.out.println("   -> Fact_Weather_Observation: Inserted " + factObsCount + " rows.");
-
-            int totalLoadedRows = dimLocCount + dimCondCount + factAirCount + factObsCount;
-
-            // 14. Cập nhật Log (Success)
-            String message = String.format("Completed. Transformed: %d rows. Loaded: %d rows.",
-                    totalTransformedRows, totalLoadedRows);
-            logProcessStatus(execId, "success", totalTransformedRows, message);
-
-            System.out.println("\n========================================");
-            System.out.println(" TRANSFORM AND LOAD PROCESS COMPLETED");
-            System.out.println("========================================");
+            updateProcessLogStatus(execId, "success", totalRows, 0, "Transform Success");
+            System.out.println("\n✅ TRANSFORM COMPLETED SUCCESSFULLY");
+            System.exit(0);
 
         } catch (Exception e) {
-            System.err.println("\n TRANSFORM & LOAD PROCESS FAILED");
+            System.err.println("\n❌ TRANSFORM FAILED");
             e.printStackTrace();
-            if (!execId.isEmpty()) {
-                logProcessStatus(execId, "failed", 0, e.getMessage());
-            }
-            EmailSender.sendError("ETL Error: Transform & Load Failed", e.getMessage(), e);
+            if (execId != null) updateProcessLogStatus(execId, "failed", 0, 0, e.getMessage());
+            EmailSender.sendError("ETL Error: Transform Failed", e.getMessage(), e);
             System.exit(1);
         }
     }
 
-    // ============================================================
-    // A. TRANSFORM METHODS (Giữ nguyên)
-    // ============================================================
+    private static int transformData(String execId) throws Exception {
+        System.out.println("[Process] Starting Data Transformation...");
+        Connection conn = null;
+        int totalUpdated = 0;
 
-    private static int transformLocation() throws SQLException {
-        String sql = "INSERT INTO stg_location " +
-                "(location_id, city, region, country, lat, lon, tz_id, \"localtime\", \"localtime_epoch\", " +
-                "record_status, hash_key, source_system, batch_id, raw_id, loaded_at) " +
-                "SELECT " +
-                "  MD5(UPPER(TRIM(name))), " +
-                "  name, region, country, " +
-                "  COALESCE(CAST(lat AS FLOAT), 0.0), COALESCE(CAST(lon AS FLOAT), 0.0), " +
-                "  tz_id, " +
-                "  TO_TIMESTAMP(CAST(\"localtime\" AS TEXT), 'YYYY-MM-DD HH24:MI'), " +
-                "  CAST(\"localtime_epoch\" AS BIGINT), " +
-                "  'pending', " +
-                "  MD5(CONCAT(name, region, country, lat, lon, tz_id)), " +
-                "  source_system, batch_id, id, NOW() " +
-                "FROM raw_weather_location";
-        return stagingDB.executeUpdate(sql);
-    }
-
-    private static int transformCondition() throws SQLException {
-        String sql = "INSERT INTO stg_weather_condition " +
-                "(condition_id, code, text, icon, record_status, hash_key, source_system, batch_id, raw_id, loaded_at) " +
-                "SELECT " +
-                "  code, " +
-                "  CAST(code AS INT), " +
-                "  MIN(text), " +
-                "  MIN(icon), " +
-                "  'pending', " +
-                "  MD5(CONCAT(code, MIN(text), MIN(icon))), " +
-                "  MIN(source_system), " +
-                "  MIN(batch_id), " +
-                "  MIN(id), " +
-                "  NOW() " +
-                "FROM raw_weather_condition " +
-                "GROUP BY code";
-        return stagingDB.executeUpdate(sql);
-    }
-
-    private static int transformAirQuality() throws SQLException {
-        String sql = "INSERT INTO stg_air_quality " +
-                "(aq_id, location_id, observation_time, co, no2, o3, so2, pm2_5, pm10, " +
-                "us_epa_index, gb_defra_index, record_status, hash_key, source_system, batch_id, raw_id, loaded_at) " +
-                "SELECT " +
-                "  MD5(CONCAT(L.location_id, R.raw_payload->>'localtime')), " +
-                "  L.location_id, " +
-                "  TO_TIMESTAMP(R.raw_payload->>'localtime', 'YYYY-MM-DD HH24:MI'), " +
-                "  CAST(R.co AS FLOAT), CAST(R.no2 AS FLOAT), CAST(R.o3 AS FLOAT), CAST(R.so2 AS FLOAT), " +
-                "  CAST(R.pm2_5 AS FLOAT), CAST(R.pm10 AS FLOAT), " +
-                "  CAST(R.us_epa_index AS INT), CAST(R.gb_defra_index AS INT), " +
-                "  'pending', " +
-                "  MD5(CONCAT(R.co, R.no2, R.o3, R.so2, R.pm2_5, R.pm10)), " +
-                "  R.source_system, R.batch_id, R.id, NOW() " +
-                "FROM raw_air_quality R " +
-                "JOIN stg_location L ON L.city = (R.raw_payload->>'location_name') " +
-                "WHERE L.batch_id = R.batch_id";
-        return stagingDB.executeUpdate(sql);
-    }
-
-    private static int transformObservation() throws SQLException {
-        String sql = "INSERT INTO stg_weather_observation " +
-                "(observation_id, location_id, condition_id, observation_date, observation_time, " +
-                "last_updated_epoch, temp_c, feelslike_c, pressure_mb, precip_mm, vis_km, wind_kph, gust_kph, " +
-                "temp_f, feelslike_f, pressure_in, precip_in, vis_miles, wind_mph, gust_mph, " +
-                "humidity_pct, wind_deg, wind_dir, cloud_pct, uv_index, is_day, " +
-                "record_status, hash_key, source_system, batch_id, raw_id, loaded_at) " +
-                "SELECT " +
-                "  MD5(CONCAT(L.location_id, R.last_updated)), " +
-                "  L.location_id, " +
-                "  (R.raw_payload->>'condition_code'), " +
-                "  COALESCE(CAST(CASE WHEN R.last_updated = '0' OR LENGTH(TRIM(R.last_updated)) < 16 THEN NULL ELSE R.last_updated END AS DATE), CURRENT_DATE), " +
-                "  COALESCE(TO_TIMESTAMP(CASE WHEN R.last_updated = '0' OR LENGTH(TRIM(R.last_updated)) < 16 THEN NULL ELSE R.last_updated END, 'YYYY-MM-DD HH24:MI'), NOW()), " +
-                "  COALESCE(CAST(NULLIF(R.last_updated_epoch, '0') AS BIGINT), 0), " +
-                "  COALESCE(CAST(CASE WHEN R.temp_c ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.temp_c ELSE NULL END AS FLOAT), 0.0), " +
-                "  COALESCE(CAST(CASE WHEN R.feelslike_c ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.feelslike_c ELSE NULL END AS FLOAT), 0.0), " +
-                "  COALESCE(CAST(CASE WHEN R.pressure_mb ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.pressure_mb ELSE NULL END AS FLOAT), 0.0), " +
-                "  COALESCE(CAST(CASE WHEN R.precip_mm ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.precip_mm ELSE NULL END AS FLOAT), 0.0), " +
-                "  COALESCE(CAST(CASE WHEN R.vis_km ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.vis_km ELSE NULL END AS FLOAT), 0.0), " +
-                "  COALESCE(CAST(CASE WHEN R.wind_kph ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.wind_kph ELSE NULL END AS FLOAT), 0.0), " +
-                "  COALESCE(CAST(CASE WHEN R.gust_kph ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.gust_kph ELSE NULL END AS FLOAT), 0.0), " +
-                "  COALESCE(CAST(CASE WHEN R.temp_f ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.temp_f ELSE NULL END AS FLOAT), 0.0), " +
-                "  COALESCE(CAST(CASE WHEN R.feelslike_f ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.feelslike_f ELSE NULL END AS FLOAT), 0.0), " +
-                "  COALESCE(CAST(CASE WHEN R.pressure_in ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.pressure_in ELSE NULL END AS FLOAT), 0.0), " +
-                "  COALESCE(CAST(CASE WHEN R.precip_in ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.precip_in ELSE NULL END AS FLOAT), 0.0), " +
-                "  COALESCE(CAST(CASE WHEN R.vis_miles ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.vis_miles ELSE NULL END AS FLOAT), 0.0), " +
-                "  COALESCE(CAST(CASE WHEN R.wind_mph ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.wind_mph ELSE NULL END AS FLOAT), 0.0), " +
-                "  COALESCE(CAST(CASE WHEN R.gust_mph ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.gust_mph ELSE NULL END AS FLOAT), 0.0), " +
-                "  COALESCE(CAST(CASE WHEN R.humidity ~ '^-?[0-9]+$' THEN R.humidity ELSE NULL END AS INT), 0), " +
-                "  COALESCE(CAST(CASE WHEN R.wind_degree ~ '^-?[0-9]+$' THEN R.wind_degree ELSE NULL END AS INT), 0), " +
-                "  R.wind_dir, " +
-                "  COALESCE(CAST(CASE WHEN R.cloud ~ '^-?[0-9]+$' THEN R.cloud ELSE NULL END AS INT), 0), " +
-                "  COALESCE(CAST(CASE WHEN R.uv ~ '^-?[0-9]+\\.?[0-9]*$' THEN R.uv ELSE NULL END AS FLOAT), 0.0), " +
-                "  (CASE WHEN R.is_day = '1' THEN TRUE ELSE FALSE END), " +
-                "  'pending', " +
-                "  MD5(CONCAT(R.temp_c, R.humidity, R.wind_kph, R.pressure_mb, R.precip_mm)), " +
-                "  R.source_system, R.batch_id, R.id, NOW() " +
-                "FROM raw_weather_observation R " +
-                "JOIN stg_location L ON L.city = R.location_name " +
-                "WHERE L.batch_id = R.batch_id";
-        return stagingDB.executeUpdate(sql);
-    }
-
-    // ============================================================
-    // B. LOAD DIMENSION METHODS (Giữ nguyên)
-    // ============================================================
-
-    private static int loadDimLocation() throws SQLException {
-        // SCD Type 1: Insert/Update
-        String sql = "INSERT INTO dim_location (" +
-                "location_id, city, region, country, lat, lon, tz_id, \"localtime\", \"localtime_epoch\", " +
-                "hash_key, loaded_at" +
-                ") " +
-                "SELECT " +
-                "location_id, city, region, country, lat, lon, tz_id, \"localtime\", \"localtime_epoch\", " +
-                "hash_key, NOW() " +
-                "FROM public.stg_location " +
-                "ON CONFLICT (location_id) DO UPDATE SET " +
-                "    city = EXCLUDED.city, " +
-                "    region = EXCLUDED.region, " +
-                "    country = EXCLUDED.country, " +
-                "    lat = EXCLUDED.lat, " +
-                "    lon = EXCLUDED.lon, " +
-                "    tz_id = EXCLUDED.tz_id, " +
-                "    \"localtime\" = EXCLUDED.\"localtime\", " +
-                "    \"localtime_epoch\" = EXCLUDED.\"localtime_epoch\", " +
-                "    hash_key = EXCLUDED.hash_key, " +
-                "    updated_at = NOW() " +
-                "WHERE dim_location.hash_key IS DISTINCT FROM EXCLUDED.hash_key";
-        return stagingDB.executeUpdate(sql);
-    }
-
-    private static int loadDimWeatherCondition() throws SQLException {
-        // SCD Type 1: Insert/Update
-        String sql = "INSERT INTO dim_weather_condition (" +
-                "condition_id, code, text, icon, hash_key, loaded_at" +
-                ") " +
-                "SELECT " +
-                "condition_id, code, text, icon, " +
-                "hash_key, NOW() " +
-                "FROM public.stg_weather_condition " +
-                "ON CONFLICT (condition_id) DO UPDATE SET " +
-                "    code = EXCLUDED.code, " +
-                "    text = EXCLUDED.text, " +
-                "    icon = EXCLUDED.icon, " +
-                "    hash_key = EXCLUDED.hash_key, " +
-                "    updated_at = NOW() " +
-                "WHERE dim_weather_condition.hash_key IS DISTINCT FROM EXCLUDED.hash_key";
-        return stagingDB.executeUpdate(sql);
-    }
-
-    // ============================================================
-    // C. LOAD FACT METHODS
-    // ============================================================
-
-    private static int loadFactAirQualityDaily() throws SQLException {
-        String sql = "INSERT INTO fact_air_quality_daily (" +
-                "location_sk, date_sk, observation_time, " +
-                "co, no2, o3, so2, pm2_5, pm10, us_epa_index, gb_defra_index, " +
-                "source_system, batch_id, loaded_at" +
-                ") " +
-                "SELECT " +
-                "    L_DIM.location_sk, " +
-                "    D_DIM.date_sk, " +
-                "    R.observation_time, " +
-                "    R.co, R.no2, R.o3, R.so2, R.pm2_5, R.pm10, R.us_epa_index, R.gb_defra_index, " +
-                "    R.source_system, R.batch_id, NOW() " +
-                "FROM public.stg_air_quality R " +
-                "JOIN dim_location L_DIM ON L_DIM.location_id = R.location_id " +
-                "JOIN dim_date D_DIM ON D_DIM.full_date = DATE(R.observation_time) " +
-                "WHERE R.record_status = 'pending' " +
-                "ON CONFLICT (location_sk, observation_time) DO NOTHING";
-
-        int inserted = stagingDB.executeUpdate(sql);
-
-        String updateStagingSql = "UPDATE public.stg_air_quality SET record_status = 'loaded', loaded_at = NOW() WHERE record_status = 'pending'";
-        stagingDB.executeUpdate(updateStagingSql);
-
-        return inserted;
-    }
-
-    private static int loadFactWeatherDaily() throws SQLException {
-        String sql = "INSERT INTO fact_weather_daily (" +
-                "location_sk, condition_sk, date_sk, observation_date, observation_time, last_updated_epoch, " +
-                "temp_c, feelslike_c, pressure_mb, precip_mm, vis_km, wind_kph, gust_kph, " +
-                "temp_f, feelslike_f, pressure_in, precip_in, vis_miles, wind_mph, gust_mph, " +
-                "humidity_pct, wind_deg, wind_dir, cloud_pct, uv_index, is_day, " +
-                "source_system, batch_id, loaded_at" +
-                ") " +
-                "SELECT " +
-                "    L_DIM.location_sk, " +
-                "    COALESCE(C_DIM.condition_sk, (SELECT condition_sk FROM dim_weather_condition WHERE condition_id = '9999')), " +
-                "    D_DIM.date_sk, " +
-                "    R.observation_date, " +
-                "    R.observation_time, " +
-                "    R.last_updated_epoch, " +
-                "    R.temp_c, R.feelslike_c, R.pressure_mb, R.precip_mm, R.vis_km, R.wind_kph, R.gust_kph, " +
-                "    R.temp_f, R.feelslike_f, R.pressure_in, R.precip_in, R.vis_miles, R.wind_mph, R.gust_mph, " +
-                "    R.humidity_pct, R.wind_deg, R.wind_dir, R.cloud_pct, R.uv_index, R.is_day, " +
-                "    R.source_system, R.batch_id, NOW() " +
-                "FROM public.stg_weather_observation R " +
-                "JOIN dim_location L_DIM ON L_DIM.location_id = R.location_id " +
-                "JOIN dim_date D_DIM ON D_DIM.full_date = R.observation_date " +
-                "LEFT JOIN dim_weather_condition C_DIM ON C_DIM.condition_id = R.condition_id " +
-                "WHERE R.record_status = 'pending' " +
-                "ON CONFLICT (location_sk, observation_time) DO NOTHING";
-
-        int inserted = stagingDB.executeUpdate(sql);
-
-        // Cập nhật trạng thái staging
-        String updateStagingSql = "UPDATE public.stg_weather_observation SET record_status = 'loaded', loaded_at = NOW() WHERE record_status = 'pending'";
-        stagingDB.executeUpdate(updateStagingSql);
-
-        return inserted;
-    }
-
-    private static void truncateStagingTables() throws SQLException {
-        System.out.println("Cleaning old staging data...");
-        // Truncate tất cả các bảng Staging
-        String sql = "TRUNCATE TABLE stg_location, stg_weather_condition, stg_air_quality, stg_weather_observation";
-        stagingDB.executeUpdate(sql);
-    }
-
-    // ============================================================
-    // UTILS & LOGGING (Giữ nguyên)
-    // ============================================================
-
-    private static boolean checkTodayProcessSuccess(String processName) {
-        final boolean[] exists = {false};
-        String sql = "SELECT 1 FROM log_process WHERE config_process_id = " +
-                "(SELECT config_process_id FROM config_process WHERE process_name = ?) " +
-                "AND status = 'success' AND DATE(start_time) = CURRENT_DATE";
         try {
-            controlDB.executeQuery(sql, rs -> {
-                if (rs.next()) exists[0] = true;
-            }, processName);
-        } catch (Exception e) {
-            System.err.println("⚠️ Warning: Check process status failed: " + e.getMessage());
-        }
-        return exists[0];
-    }
+            conn = stagingDB.getConnection();
+            conn.setAutoCommit(false);
 
-    private static void logProcess(String execId, String processName, String status, String desc) {
-        String sql = "INSERT INTO log_process (execution_id, config_process_id, start_time, status, error_message) " +
-                "VALUES (?, (SELECT config_process_id FROM config_process WHERE process_name = ?), NOW(), ?::process_status, ?)";
-        try {
-            controlDB.executeUpdate(sql, execId, processName, status, desc);
+            // --- PHASE 1: RAW TO STAGING ---
+            System.out.println("\n--- [PHASE 1] RAW TO STAGING ---");
+
+            // 1.1 Location
+            totalUpdated += executeSQL(conn, "Staging Location",
+                    "TRUNCATE TABLE stg_location",
+                    "INSERT INTO stg_location (location_id, city, region, country, lat, lon, tz_id, \"localtime\", localtime_epoch, record_status, hash_key, source_system, batch_id) " +
+                            "SELECT DISTINCT ON (r.name) r.name, r.name, r.region, r.country, CAST(r.lat AS float8), CAST(r.lon AS float8), r.tz_id, CAST(r.\"localtime\" AS timestamp), CAST(r.localtime_epoch AS int8), 'pending', " +
+                            "MD5(CONCAT(r.name, r.region, r.country, r.lat, r.lon, r.tz_id)), " +
+                            "r.source_system, r.batch_id " +
+                            "FROM raw_weather_location r " +
+                            "ORDER BY r.name, r.batch_id DESC");
+
+            // 1.2 Condition
+            totalUpdated += executeSQL(conn, "Staging Condition",
+                    "TRUNCATE TABLE stg_weather_condition",
+                    "INSERT INTO stg_weather_condition (condition_id, code, text, icon, record_status, hash_key, source_system, batch_id) " +
+                            "SELECT DISTINCT ON (r.code) r.code, CAST(r.code AS int4), r.text, r.icon, 'pending', " +
+                            "MD5(CONCAT(r.code, r.text, r.icon)), " +
+                            "r.source_system, r.batch_id " +
+                            "FROM raw_weather_condition r " +
+                            "ORDER BY r.code, r.batch_id DESC");
+
+            // 1.3 Observation (Đã có đầy đủ cột từ bước trước)
+            totalUpdated += executeSQL(conn, "Staging Observation",
+                    "TRUNCATE TABLE stg_weather_observation",
+                    "INSERT INTO stg_weather_observation (" +
+                            "   observation_id, location_id, condition_id, observation_date, observation_time, last_updated_epoch, " +
+                            "   temp_c, feelslike_c, pressure_mb, precip_mm, humidity_pct, cloud_pct, uv_index, " +
+                            "   vis_km, wind_kph, gust_kph, temp_f, feelslike_f, pressure_in, precip_in, vis_miles, wind_mph, gust_mph, wind_deg, wind_dir, " +
+                            "   record_status, hash_key, source_system, batch_id" +
+                            ") " +
+                            "SELECT DISTINCT ON (r.location_name, r.last_updated_epoch) " +
+                            "   MD5(CONCAT(r.location_name, r.last_updated_epoch)), r.location_name, " +
+                            "   (r.raw_payload->'current'->'condition'->>'code'), CAST(r.last_updated AS date), CAST(r.last_updated AS timestamp), CAST(r.last_updated_epoch AS int8), " +
+                            "   CAST(r.temp_c AS float8), CAST(r.feelslike_c AS float8), CAST(r.pressure_mb AS float8), CAST(r.precip_mm AS float8), " +
+                            "   CAST(r.humidity AS int2), CAST(r.cloud AS int2), CAST(r.uv AS float8), " +
+                            "   CAST(r.vis_km AS float8), CAST(r.wind_kph AS float8), CAST(r.gust_kph AS float8), " +
+                            "   CAST(r.temp_f AS float8), CAST(r.feelslike_f AS float8), CAST(r.pressure_in AS float8), CAST(r.precip_in AS float8), " +
+                            "   CAST(r.vis_miles AS float8), CAST(r.wind_mph AS float8), CAST(r.gust_mph AS float8), " +
+                            "   CAST(r.wind_degree AS int4), r.wind_dir, " +
+                            "   'pending', " +
+                            "   MD5(CONCAT(r.temp_c, r.humidity, r.precip_mm, r.uv, r.wind_kph, r.pressure_mb, r.vis_km)), " +
+                            "   r.source_system, r.batch_id " +
+                            "FROM raw_weather_observation r " +
+                            "ORDER BY r.location_name, r.last_updated_epoch, r.batch_id DESC");
+
+            // 1.4 Air Quality
+            totalUpdated += executeSQL(conn, "Staging Air Quality",
+                    "TRUNCATE TABLE stg_air_quality",
+                    "INSERT INTO stg_air_quality (aq_id, location_id, observation_time, co, no2, o3, so2, pm2_5, pm10, us_epa_index, gb_defra_index, record_status, hash_key, source_system, batch_id) " +
+                            "SELECT DISTINCT ON (l.name, r.batch_id) " +
+                            "MD5(CONCAT(l.name, r.batch_id)), l.name, CAST(l.\"localtime\" AS timestamp), " +
+                            "CAST(r.co AS float8), CAST(r.no2 AS float8), CAST(r.o3 AS float8), CAST(r.so2 AS float8), CAST(r.pm2_5 AS float8), CAST(r.pm10 AS float8), " +
+                            "CAST(r.us_epa_index AS int4), CAST(r.gb_defra_index AS int4), 'pending', " +
+                            "MD5(CONCAT(r.co, r.no2, r.pm2_5, r.pm10, r.us_epa_index)), " +
+                            "r.source_system, r.batch_id " +
+                            "FROM raw_air_quality r JOIN raw_weather_location l ON r.batch_id = l.batch_id " +
+                            "ORDER BY l.name, r.batch_id DESC");
+
+
+            // --- PHASE 2: STAGING TO DIM/FACT ---
+            System.out.println("\n--- [PHASE 2] STAGING TO DIM/FACT ---");
+
+            // 2.1 Dim Location
+            totalUpdated += executeUpdate(conn, "Dim Location",
+                    "INSERT INTO dim_location (location_id, city, region, country, lat, lon, tz_id, hash_key, updated_at) " +
+                            "SELECT location_id, city, region, country, lat, lon, tz_id, hash_key, CURRENT_TIMESTAMP FROM stg_location " +
+                            "ON CONFLICT (location_id) DO UPDATE SET " +
+                            "   city = EXCLUDED.city, region = EXCLUDED.region, lat = EXCLUDED.lat, lon = EXCLUDED.lon, " +
+                            "   hash_key = EXCLUDED.hash_key, updated_at = CURRENT_TIMESTAMP " +
+                            "WHERE dim_location.hash_key IS DISTINCT FROM EXCLUDED.hash_key");
+
+            // 2.2 Dim Condition
+            totalUpdated += executeUpdate(conn, "Dim Condition",
+                    "INSERT INTO dim_weather_condition (condition_id, code, text, icon, hash_key, updated_at) " +
+                            "SELECT condition_id, code, text, icon, hash_key, CURRENT_TIMESTAMP FROM stg_weather_condition " +
+                            "ON CONFLICT (condition_id) DO UPDATE SET " +
+                            "   text = EXCLUDED.text, icon = EXCLUDED.icon, hash_key = EXCLUDED.hash_key, updated_at = CURRENT_TIMESTAMP " +
+                            "WHERE dim_weather_condition.hash_key IS DISTINCT FROM EXCLUDED.hash_key");
+
+            // 2.3 Fact Weather Daily [UPDATED: Added full metrics]
+            totalUpdated += executeUpdate(conn, "Fact Weather",
+                    "INSERT INTO fact_weather_daily (" +
+                            "   location_sk, condition_sk, date_sk, observation_date, observation_time, " +
+                            "   temp_c, humidity_pct, precip_mm, uv_index, " +
+                            // Thêm các cột mới
+                            "   vis_km, wind_kph, gust_kph, temp_f, feelslike_f, pressure_in, precip_in, vis_miles, wind_mph, gust_mph, wind_deg, wind_dir, " +
+                            "   source_system, loaded_at" +
+                            ") " +
+                            "SELECT dl.location_sk, dwc.condition_sk, dd.date_sk, s.observation_date, s.observation_time, " +
+                            "   s.temp_c, s.humidity_pct, s.precip_mm, s.uv_index, " +
+                            // Lấy dữ liệu từ Staging
+                            "   s.vis_km, s.wind_kph, s.gust_kph, s.temp_f, s.feelslike_f, s.pressure_in, s.precip_in, s.vis_miles, s.wind_mph, s.gust_mph, s.wind_deg, s.wind_dir, " +
+                            "   s.source_system, CURRENT_TIMESTAMP " +
+                            "FROM stg_weather_observation s " +
+                            "JOIN dim_location dl ON s.location_id = dl.location_id " +
+                            "LEFT JOIN dim_weather_condition dwc ON s.condition_id = dwc.condition_id " +
+                            "JOIN dim_date dd ON s.observation_date = dd.full_date " +
+                            "ON CONFLICT (location_sk, observation_time) DO UPDATE SET " +
+                            "   temp_c = EXCLUDED.temp_c, humidity_pct = EXCLUDED.humidity_pct, precip_mm = EXCLUDED.precip_mm, uv_index = EXCLUDED.uv_index, " +
+                            "   vis_km = EXCLUDED.vis_km, wind_kph = EXCLUDED.wind_kph, gust_kph = EXCLUDED.gust_kph, " +
+                            "   temp_f = EXCLUDED.temp_f, feelslike_f = EXCLUDED.feelslike_f, pressure_in = EXCLUDED.pressure_in, " +
+                            "   loaded_at = CURRENT_TIMESTAMP " +
+                            "WHERE fact_weather_daily.temp_c IS DISTINCT FROM EXCLUDED.temp_c " +
+                            "   OR fact_weather_daily.humidity_pct IS DISTINCT FROM EXCLUDED.humidity_pct " +
+                            "   OR fact_weather_daily.wind_kph IS DISTINCT FROM EXCLUDED.wind_kph " + // Kiểm tra thêm gió
+                            "   OR fact_weather_daily.pressure_in IS DISTINCT FROM EXCLUDED.pressure_in"); // Kiểm tra thêm áp suất
+
+            // 2.4 Fact Air Quality
+            totalUpdated += executeUpdate(conn, "Fact Air Quality",
+                    "INSERT INTO fact_air_quality_daily (location_sk, date_sk, observation_time, " +
+                            "pm2_5, pm10, us_epa_index, co, no2, o3, so2, gb_defra_index, batch_id, source_system, loaded_at) " +
+                            "SELECT dl.location_sk, dd.date_sk, s.observation_time, " +
+                            "s.pm2_5, s.pm10, s.us_epa_index, s.co, s.no2, s.o3, s.so2, s.gb_defra_index, s.batch_id, s.source_system, CURRENT_TIMESTAMP " +
+                            "FROM stg_air_quality s " +
+                            "JOIN dim_location dl ON s.location_id = dl.location_id " +
+                            "JOIN dim_date dd ON CAST(s.observation_time AS date) = dd.full_date " +
+                            "ON CONFLICT (location_sk, observation_time) DO UPDATE SET " +
+                            "   pm2_5 = EXCLUDED.pm2_5, us_epa_index = EXCLUDED.us_epa_index, " +
+                            "   co = EXCLUDED.co, no2 = EXCLUDED.no2, o3 = EXCLUDED.o3, so2 = EXCLUDED.so2, gb_defra_index = EXCLUDED.gb_defra_index, " +
+                            "   batch_id = EXCLUDED.batch_id, loaded_at = CURRENT_TIMESTAMP " +
+                            "WHERE fact_air_quality_daily.pm2_5 IS DISTINCT FROM EXCLUDED.pm2_5 " +
+                            "   OR fact_air_quality_daily.co IS DISTINCT FROM EXCLUDED.co");
+
+            conn.commit();
+            return totalUpdated;
+
         } catch (Exception e) {
-            System.err.println("Warning: Log start failed: " + e.getMessage());
+            try { if(conn != null) conn.rollback(); } catch (SQLException ex) {}
+            throw e;
+        } finally {
+            try { if(conn != null) conn.close(); } catch (SQLException ex) {}
         }
     }
 
-    private static void logProcessStatus(String execId, String status, int count, String desc) {
-        String sql = "UPDATE log_process SET status = ?::process_status, end_time = NOW(), " +
-                "records_inserted = ?, error_message = ? WHERE execution_id = ?";
-        try {
-            controlDB.executeUpdate(sql, status, count, desc, execId);
-        } catch (Exception e) {
-            System.err.println(" Warning: Log update failed: " + e.getMessage());
+    // --- Helper Methods ---
+    private static int executeSQL(Connection conn, String name, String truncateSql, String insertSql) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
+            System.out.print("  > " + name + "... ");
+            if (truncateSql != null) stmt.execute(truncateSql);
+            int rows = stmt.executeUpdate(insertSql);
+            System.out.println("Inserted " + rows + " rows.");
+            return rows;
+        }
+    }
+
+    private static int executeUpdate(Connection conn, String name, String sql) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            System.out.print("  > " + name + "... ");
+            int rows = ps.executeUpdate();
+            System.out.println("Upserted " + rows + " rows.");
+            return rows;
         }
     }
 
     private static DBConn connectControlDB(LoadConfig config) throws Exception {
         Element control = LoadConfig.getElement(config.getXmlDoc(), "control");
-        return new DBConn(
-                LoadConfig.getValue(control, "url"),
-                LoadConfig.getValue(control, "username"),
-                LoadConfig.getValue(control, "password")
-        );
+        return new DBConn(LoadConfig.getValue(control, "url"), LoadConfig.getValue(control, "username"), LoadConfig.getValue(control, "password"));
     }
 
     private static DBConn connectStagingDB(LoadConfig config) throws Exception {
         Element database = LoadConfig.getElement(config.getXmlDoc(), "database");
         Element staging = LoadConfig.getChildElement(database, "staging");
-        return new DBConn(
-                LoadConfig.getValue(staging, "url"), LoadConfig.getValue(staging, "username"),
-                LoadConfig.getValue(staging, "password")
-        );
+        return new DBConn(LoadConfig.getValue(staging, "url"), LoadConfig.getValue(staging, "username"), LoadConfig.getValue(staging, "password"));
+    }
+
+    private static void checkTodayProcessSuccess() {
+        try {
+            String sql = "SELECT check_today_process_success('WA_Transform_DW') AS success";
+            final boolean[] alreadyLoaded = {false};
+            controlDB.executeQuery(sql, rs -> { if (rs.next()) alreadyLoaded[0] = rs.getBoolean("success"); });
+            if (alreadyLoaded[0]) { System.out.println("⚠️ Hôm nay đã Transform thành công. Dừng tiến trình."); System.exit(0); }
+        } catch (Exception e) { System.err.println("⚠️ Warning Check Log: " + e.getMessage()); }
+    }
+
+    private static String prepareTransformProcess() throws Exception {
+        System.out.println("[Prepare] Creating process log entry...");
+        String processName = "WA_Transform_DW_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String getConfigSql = String.format("SELECT get_or_create_config_process('%s', 'transform', 'staging_tables', 'staging', 'warehouse_tables')", processName);
+        final int[] configId = {0};
+        controlDB.executeQuery(getConfigSql, rs -> { if (rs.next()) configId[0] = rs.getInt(1); });
+        if (configId[0] == 0) throw new Exception("Failed to get/create config_process ID");
+        String createLogSql = "SELECT create_new_process_log(" + configId[0] + ")";
+        final String[] execId = {null};
+        controlDB.executeQuery(createLogSql, rs -> { if (rs.next()) execId[0] = rs.getString(1); });
+        if (execId[0] == null) throw new Exception("Failed to create log_process entry");
+        System.out.println("[Prepare] Created Execution ID: " + execId[0]);
+        return execId[0];
+    }
+
+    private static void updateProcessLogStatus(String execId, String status, int inserted, int failed, String message) {
+        try {
+            String sql = "SELECT update_process_log_status(?, ?::process_status, ?, ?, ?)";
+            controlDB.executeQuery(sql, rs -> {}, execId, status, inserted, failed, message);
+            System.out.println("[Log] Updated status to: " + status);
+        } catch (Exception e) { System.err.println("❌ Failed update log: " + e.getMessage()); }
     }
 }
