@@ -19,7 +19,7 @@ public class TransformToStaging {
 
     public static void main(String[] args) {
         System.out.println("========================================");
-        System.out.println("   WEATHER ETL - STEP 7: TRANSFORM (FACT FULL)");
+        System.out.println("   WEATHER ETL - STEP 7: TRANSFORM (FULL COLUMNS v2)");
         System.out.println("========================================");
 
         String execId = null;
@@ -82,7 +82,7 @@ public class TransformToStaging {
                             "FROM raw_weather_condition r " +
                             "ORDER BY r.code, r.batch_id DESC");
 
-            // 1.3 Observation (Đã có đầy đủ cột từ bước trước)
+            // 1.3 Observation
             totalUpdated += executeSQL(conn, "Staging Observation",
                     "TRUNCATE TABLE stg_weather_observation",
                     "INSERT INTO stg_weather_observation (" +
@@ -140,19 +140,19 @@ public class TransformToStaging {
                             "   text = EXCLUDED.text, icon = EXCLUDED.icon, hash_key = EXCLUDED.hash_key, updated_at = CURRENT_TIMESTAMP " +
                             "WHERE dim_weather_condition.hash_key IS DISTINCT FROM EXCLUDED.hash_key");
 
-            // 2.3 Fact Weather Daily [UPDATED: Added full metrics]
+            // 2.3 Fact Weather Daily [UPDATED: Added feelslike_c, pressure_mb, cloud_pct, batch_id]
             totalUpdated += executeUpdate(conn, "Fact Weather",
                     "INSERT INTO fact_weather_daily (" +
                             "   location_sk, condition_sk, date_sk, observation_date, observation_time, " +
                             "   temp_c, humidity_pct, precip_mm, uv_index, " +
-                            // Thêm các cột mới
                             "   vis_km, wind_kph, gust_kph, temp_f, feelslike_f, pressure_in, precip_in, vis_miles, wind_mph, gust_mph, wind_deg, wind_dir, " +
+                            "   feelslike_c, pressure_mb, cloud_pct, batch_id, " + // <--- CỘT MỚI
                             "   source_system, loaded_at" +
                             ") " +
                             "SELECT dl.location_sk, dwc.condition_sk, dd.date_sk, s.observation_date, s.observation_time, " +
                             "   s.temp_c, s.humidity_pct, s.precip_mm, s.uv_index, " +
-                            // Lấy dữ liệu từ Staging
                             "   s.vis_km, s.wind_kph, s.gust_kph, s.temp_f, s.feelslike_f, s.pressure_in, s.precip_in, s.vis_miles, s.wind_mph, s.gust_mph, s.wind_deg, s.wind_dir, " +
+                            "   s.feelslike_c, s.pressure_mb, s.cloud_pct, s.batch_id, " + // <--- SELECT CỘT MỚI
                             "   s.source_system, CURRENT_TIMESTAMP " +
                             "FROM stg_weather_observation s " +
                             "JOIN dim_location dl ON s.location_id = dl.location_id " +
@@ -161,12 +161,11 @@ public class TransformToStaging {
                             "ON CONFLICT (location_sk, observation_time) DO UPDATE SET " +
                             "   temp_c = EXCLUDED.temp_c, humidity_pct = EXCLUDED.humidity_pct, precip_mm = EXCLUDED.precip_mm, uv_index = EXCLUDED.uv_index, " +
                             "   vis_km = EXCLUDED.vis_km, wind_kph = EXCLUDED.wind_kph, gust_kph = EXCLUDED.gust_kph, " +
-                            "   temp_f = EXCLUDED.temp_f, feelslike_f = EXCLUDED.feelslike_f, pressure_in = EXCLUDED.pressure_in, " +
-                            "   loaded_at = CURRENT_TIMESTAMP " +
+                            "   feelslike_c = EXCLUDED.feelslike_c, pressure_mb = EXCLUDED.pressure_mb, cloud_pct = EXCLUDED.cloud_pct, " + // UPDATE CỘT MỚI
+                            "   batch_id = EXCLUDED.batch_id, loaded_at = CURRENT_TIMESTAMP " +
                             "WHERE fact_weather_daily.temp_c IS DISTINCT FROM EXCLUDED.temp_c " +
-                            "   OR fact_weather_daily.humidity_pct IS DISTINCT FROM EXCLUDED.humidity_pct " +
-                            "   OR fact_weather_daily.wind_kph IS DISTINCT FROM EXCLUDED.wind_kph " + // Kiểm tra thêm gió
-                            "   OR fact_weather_daily.pressure_in IS DISTINCT FROM EXCLUDED.pressure_in"); // Kiểm tra thêm áp suất
+                            "   OR fact_weather_daily.cloud_pct IS DISTINCT FROM EXCLUDED.cloud_pct " + // Kiểm tra mây thay đổi
+                            "   OR fact_weather_daily.pressure_mb IS DISTINCT FROM EXCLUDED.pressure_mb"); // Kiểm tra áp suất thay đổi
 
             // 2.4 Fact Air Quality
             totalUpdated += executeUpdate(conn, "Fact Air Quality",
