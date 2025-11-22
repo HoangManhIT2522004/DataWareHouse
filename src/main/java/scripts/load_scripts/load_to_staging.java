@@ -256,7 +256,18 @@ public class load_to_staging {
                     psLoc.setString(1, row[map.get("location_name")]);
                     psLoc.setString(2, row[map.get("region")]);
                     psLoc.setString(3, "Vietnam");
-                    psLoc.setObject(4, null); psLoc.setObject(5, null); psLoc.setObject(6, null);
+                    try {
+                        psLoc.setString(4, row[map.get("lat")]);   // Lấy vĩ độ
+                    } catch (Exception e) { psLoc.setObject(4, null); }
+
+                    try {
+                        psLoc.setString(5, row[map.get("lon")]);   // Lấy kinh độ
+                    } catch (Exception e) { psLoc.setObject(5, null); }
+
+                    try {
+                        psLoc.setString(6, row[map.get("tz_id")]); // Lấy time zone ID
+                    } catch (Exception e) { psLoc.setObject(6, null); }
+                    // ------------------------
                     psLoc.setString(7, row[map.get("last_updated")]);
                     psLoc.setString(8, source);
                     psLoc.setString(9, extractBatchId);
