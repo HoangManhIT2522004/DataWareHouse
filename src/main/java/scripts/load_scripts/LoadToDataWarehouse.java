@@ -5,124 +5,67 @@ import utils.EmailSender;
 import utils.LoadConfig;
 import org.w3c.dom.Element;
 
+import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 public class LoadToDataWarehouse {
 
     private static DBConn controlDB;
+    private static DBConn stagingDB;
     private static DBConn warehouseDB;
-    private static String loadExecutionId;
+    private static String executionId;
 
     private static final DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final int MAX_RETRIES = 3;
-    private static final long RETRY_DELAY_MINUTES = 15;
+    private static final DateTimeFormatter dtf_date = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     public static void main(String[] args) {
-        int attempt = 1;
+        System.out.println("========================================");
+        System.out.println("   WEATHER ETL - STEP 4: LOAD TO WAREHOUSE");
+        System.out.println("========================================\n");
 
-        while (attempt <= MAX_RETRIES) {
-            System.out.println("\n========================================");
-            System.out.println("   WEATHER ETL - STEP 7: LOAD TO WAREHOUSE");
-            System.out.println("   Lần chạy thứ: " + attempt + "/" + MAX_RETRIES);
-            System.out.println("   Thời gian: " + LocalDateTime.now().format(dtf));
-            System.out.println("========================================");
+        try {
+            // 1. Load config
+            LoadConfig config = new LoadConfig("config/config.xml");
+            controlDB   = connectControlDB(config);
+            stagingDB   = connectStagingDB(config);
+            warehouseDB = connectWarehouseDB(config);
 
-            controlDB = null;
-            warehouseDB = null;
-            loadExecutionId = null;
+            // 2. Idempotent check
+            checkTodayWarehouseLoadSuccess();
 
-            try {
-                // 1. Load config (giống hệt load_to_staging)
-                LoadConfig config = new LoadConfig("config/config.xml");
+            // 3. Tạo execution log
+            executionId = prepareWarehouseLoadProcess();
 
-                // 2. Kết nối DB
-                controlDB = connectControlDB(config);
-                warehouseDB = connectWarehouseDB(config);
+            // 4. Load dữ liệu (Đã sửa thành Incremental Load)
+            int total = loadToWarehouse(executionId);
 
-                // 3. KIỂM TRA HÔM NAY ĐÃ CHẠY LOAD WAREHOUSE CHƯA (idempotent)
-                checkTodayWarehouseLoadSuccess();
+            // 5. Cập nhật log
+            updateProcessLogStatus(executionId, "success", total, 0,
+                    "Load to Data Warehouse successfully");
 
-                // 4. Tạo log execution chính thức (EXEC-20251122-001)
-                loadExecutionId = prepareWarehouseLoadProcess();
+            System.out.println("\nTổng bản ghi đã load: " + total);
+            // 6. Gửi email báo thành công
+            sendSuccessEmail(total);
 
-                // 5. Thực hiện Load vào Warehouse
-                int loc  = callLoadFunction("load_dim_location");
-                int cond = callLoadFunction("load_dim_weather_condition");
-                int fact = callLoadFunction("load_fact_weather_daily");
-                int aqi  = callLoadFunction("load_fact_air_quality_daily");
+            System.out.println("\nLOAD TO DATA WAREHOUSE COMPLETED SUCCESSFULLY");
+            System.exit(0);
 
-                int total = loc + cond + fact + aqi;
+        } catch (Exception e) {
+            System.err.println("\nLOAD TO DATA WAREHOUSE FAILED");
+            e.printStackTrace();
 
-                // 6. Cập nhật log thành công
-                updateProcessLogStatus(loadExecutionId, "success", total, 0, "Loaded to Warehouse successfully");
+            if (executionId != null)
+                updateProcessLogStatus(executionId, "failed", 0, 0, e.getMessage());
 
-                // 7. Gửi email báo thành công
-                sendSuccessEmail(loc, cond, fact, aqi, total, attempt);
-
-                System.out.println("\nLOAD TO DATA WAREHOUSE HOÀN TẤT THÀNH CÔNG!");
-                System.out.println("Tổng cộng: " + String.format("%,d", total) + " bản ghi");
-                System.out.println("Execution ID: " + loadExecutionId);
-                System.out.println("========================================");
-                System.exit(0);
-
-            } catch (Exception e) {
-                System.err.println("LẦN " + attempt + " THẤT BẠI: " + e.getMessage());
-                e.printStackTrace();
-
-                if (loadExecutionId != null) {
-                    try {
-                        updateProcessLogStatus(loadExecutionId, "failed", 0, 0,
-                                "Attempt " + attempt + " failed: " + e.getMessage());
-                    } catch (Exception ignored) {}
-                }
-
-                sendErrorEmail(e, attempt);
-
-                if (attempt == MAX_RETRIES) {
-                    System.err.println("ĐÃ THỬ " + MAX_RETRIES + " LẦN - DỪNG HOÀN TOÀN!");
-                    System.exit(1);
-                }
-
-                System.out.println("Chờ " + RETRY_DELAY_MINUTES + " phút để thử lại lần " + (attempt + 1) + "...");
-                try {
-                    Thread.sleep(RETRY_DELAY_MINUTES * 60 * 1000);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    System.exit(1);
-                }
-            }
-            attempt++;
+            sendErrorEmail(e);
+            System.exit(1);
         }
     }
 
-    // ============================================================
-    // CONNECTION & CONFIG (GIỐNG HỆT load_to_staging)
-    // ============================================================
-
-    private static DBConn connectControlDB(LoadConfig config) throws Exception {
-        Element control = LoadConfig.getElement(config.getXmlDoc(), "control");
-        return new DBConn(
-                LoadConfig.getValue(control, "url"),
-                LoadConfig.getValue(control, "username"),
-                LoadConfig.getValue(control, "password")
-        );
-    }
-
-    private static DBConn connectWarehouseDB(LoadConfig config) throws Exception {
-        Element database = LoadConfig.getElement(config.getXmlDoc(), "database");
-        Element warehouse = LoadConfig.getChildElement(database, "datawarehouse");
-        return new DBConn(
-                LoadConfig.getValue(warehouse, "url"),
-                LoadConfig.getValue(warehouse, "username"),
-                LoadConfig.getValue(warehouse, "password")
-        );
-    }
-
-    // ============================================================
-    // IDEMPOTENT CHECK - Giống hệt load_to_staging
-    // ============================================================
-
+    // ========================================================================
+    // (1) CHECK TODAY & (2) LOG PROCESS - GIỮ NGUYÊN
+    // ========================================================================
     private static void checkTodayWarehouseLoadSuccess() throws Exception {
         System.out.println("[Check] Kiểm tra xem hôm nay đã Load Warehouse chưa...");
         String sql = "SELECT check_today_process_success('WA_Load_WH') AS success";
@@ -141,10 +84,6 @@ public class LoadToDataWarehouse {
             System.out.println("Chưa chạy Load Warehouse hôm nay. Tiếp tục...");
         }
     }
-
-    // ============================================================
-    // LOGGING - DÙNG CHUẨN controlDB (giống load_to_staging)
-    // ============================================================
 
     private static String prepareWarehouseLoadProcess() throws Exception {
         System.out.println("[Log] Tạo log process cho Load Warehouse...");
@@ -185,93 +124,230 @@ public class LoadToDataWarehouse {
         }
     }
 
-    // ============================================================
-    // GỌI CÁC FUNCTION TRONG WAREHOUSE
-    // ============================================================
-
-    private static int callLoadFunction(String functionName) throws Exception {
-        System.out.println("Đang thực thi: " + functionName + "() ...");
-        final int[] count = {0};
-        warehouseDB.executeQuery("SELECT " + functionName + "() AS rows", rs -> {
-            if (rs.next()) count[0] = rs.getInt("rows");
-        });
-        System.out.println("   Hoàn thành: " + String.format("%,d", count[0]) + " bản ghi");
-        return count[0];
-    }
-
-    // ============================================================
-    // EMAIL BÁO CÁO (GIỮ NGUYÊN ĐẸP NHƯ CŨ)
-    // ============================================================
-
-    private static void sendSuccessEmail(int loc, int cond, int fact, int aqi, int total, int attempt) {
-        String subject = "Weather ETL - LOAD TO WAREHOUSE THÀNH CÔNG " +
-                (attempt > 1 ? "(sau " + (attempt-1) + " lần retry)" : "");
+    // ========================================================================
+    // (3) GỬI EMAIL - GIỮ NGUYÊN
+    // ========================================================================
+    private static void sendSuccessEmail(int total) {
+        String subject = "Weather ETL - LOAD TO DATA WAREHOUSE THÀNH CÔNG";
 
         String body = """
-            ======================================
-               WEATHER ETL - LOAD TO DATA WAREHOUSE   
-                      HOÀN TẤT THÀNH CÔNG           
-            ======================================
-            
-            Execution ID       : %s
-            Thời gian          : %s
-            Số lần thử         : %d %s
-            Tổng bản ghi       : %,d records
-            
-            --- CHI TIẾT ---
-            ✓ dim_location           : %,d
-            ✓ dim_weather_condition  : %,d
-            ✓ fact_weather_daily     : %,d
-            ✓ fact_air_quality_daily : %,d
-            
-            Dữ liệu đã được load đầy đủ vào Data Warehouse.
-            Hệ thống hoạt động ổn định!
-            
-            Báo cáo tự động - %s
-            """.formatted(
-                loadExecutionId,
+                ======================================
+                   WEATHER ETL - LOAD TO WAREHOUSE   
+                          THÀNH CÔNG          
+                ======================================
+                
+                Execution ID : %s
+                Thời gian    : %s
+                Tổng bản ghi : %,d records
+                
+                Hệ thống hoạt động ổn định.
+                """.formatted(
+                executionId,
                 LocalDateTime.now().format(dtf),
-                attempt,
-                attempt > 1 ? "(retry thành công)" : "(lần đầu tiên)",
-                total,
-                loc, cond, fact, aqi,
-                LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"))
+                total
         );
 
         EmailSender.sendEmail(subject, body);
-        System.out.println("Đã gửi email báo thành công!");
+        System.out.println("[Email] Đã gửi email thành công!");
     }
 
-    private static void sendErrorEmail(Exception e, int attempt) {
-        String subject = attempt >= MAX_RETRIES
-                ? "Weather ETL - LOAD TO WAREHOUSE THẤT BẠI HOÀN TOÀN"
-                : "Weather ETL - LOAD TO WAREHOUSE THẤT BẠI (lần " + attempt + "/" + MAX_RETRIES + ")";
+    private static void sendErrorEmail(Exception e) {
+        String subject = "Weather ETL - LOAD TO WAREHOUSE THẤT BẠI";
 
         String body = """
-            ======================================
-               WEATHER ETL - LOAD TO DATA WAREHOUSE   
-                      %s                     
-            ======================================
-            
-            Execution ID : %s
-            Lần thử      : %d/%d
-            Thời gian    : %s
-            
-            Lỗi: %s
-            
-            %s
-            """.formatted(
-                attempt >= MAX_RETRIES ? "THẤT BẠI HOÀN TOÀN" : "ĐANG LỖI - SẼ RETRY",
-                loadExecutionId != null ? loadExecutionId : "N/A",
-                attempt, MAX_RETRIES,
-                LocalDateTime.now().format(dtf),
-                e.getMessage(),
-                attempt < MAX_RETRIES
-                        ? "Sẽ tự động thử lại sau " + RETRY_DELAY_MINUTES + " phút..."
-                        : "ĐÃ HẾT LẦN THỬ - CẦN CAN THIỆP KHẨN!"
-        );
+                ======================================
+                   WEATHER ETL - LOAD TO WAREHOUSE   
+                              THẤT BẠI               
+                ======================================
+                
+                Execution ID : %s
+                Thời gian    : %s
+                
+                Lỗi:
+                %s
+                
+                Cần kiểm tra ngay.
+                """
+                .formatted(
+                        executionId != null ? executionId : "N/A",
+                        LocalDateTime.now().format(dtf),
+                        e.getMessage()
+                );
 
         EmailSender.sendError(subject, body, e);
-        System.out.println("Đã gửi email báo lỗi!");
+        System.out.println("[Email] Đã gửi email báo lỗi!");
+    }
+
+
+    private static int loadToWarehouse(String execId) throws Exception {
+        System.out.println("[Process] Starting Load to Warehouse ...");
+        int total = 0;
+
+        try (Connection connStaging = stagingDB.getConnection();
+             Connection connWarehouse = warehouseDB.getConnection()) {
+
+            connWarehouse.setAutoCommit(false);
+
+            // 1. DIMENSION TABLES: Load/Merge Incremental
+            total += loadDimensionIncremental(connWarehouse, connStaging, "dim_location", "location_id");
+            total += loadDimensionIncremental(connWarehouse, connStaging, "dim_weather_condition", "condition_id");
+
+            // 2. FACT TABLES: Load chỉ dữ liệu hôm nay (Incremental/Daily Refresh)
+            total += loadFactDailyIncremental(connWarehouse, connStaging, "fact_weather_daily", "observation_date");
+            total += loadFactDailyIncremental(connWarehouse, connStaging, "fact_air_quality_daily", "observation_time");
+
+            connWarehouse.commit();
+        }
+        return total;
+    }
+
+    private static int loadFactDailyIncremental(Connection warehouse, Connection staging,
+                                                String tableName, String dateColumnName) throws SQLException {
+
+        String todayDate = LocalDateTime.now().format(dtf_date);
+        int totalRows = 0;
+
+        System.out.print(" Loading  " + tableName + " : ");
+
+        String whereClause;
+        if (dateColumnName.equals("observation_time")) {
+            whereClause = String.format("DATE(%s) = CAST(? AS DATE)", dateColumnName);
+        } else {
+            whereClause = String.format("%s = CAST(? AS DATE)", dateColumnName);
+        }
+
+        // B1. XÓA dữ liệu ngày hôm nay trong Warehouse (để xử lý re-run)
+        try (Statement delStmt = warehouse.createStatement()) {
+            String castedDate = "'" + todayDate + "'::DATE";
+            String deleteSql;
+            if (dateColumnName.equals("observation_time")) {
+                deleteSql = String.format("DELETE FROM %s WHERE DATE(%s) = %s", tableName, dateColumnName, castedDate);
+            } else {
+                deleteSql = String.format("DELETE FROM %s WHERE %s = %s", tableName, dateColumnName, castedDate);
+            }
+
+            int deletedRows = delStmt.executeUpdate(deleteSql);
+
+        }
+
+        String columns = getColumnList(staging, tableName);
+        String placeholders = columns.replaceAll("[^,]+", "?");
+        String insertSql = "INSERT INTO " + tableName + " (" + columns + ") VALUES (" + placeholders + ")";
+        String selectSql = "SELECT " + columns + " FROM " + tableName + " WHERE " + whereClause;
+
+        try (PreparedStatement ps = warehouse.prepareStatement(insertSql);
+             PreparedStatement sel = staging.prepareStatement(selectSql)) {
+
+            sel.setString(1, todayDate);
+
+            int batch = 0;
+            try (ResultSet rs = sel.executeQuery()) {
+                while (rs.next()) {
+                    for (int i = 1; i <= rs.getMetaData().getColumnCount(); i++) {
+                        ps.setObject(i, rs.getObject(i));
+                    }
+                    ps.addBatch();
+                    batch++;
+
+                    if (batch >= 5000) {
+                        totalRows += ps.executeBatch().length;
+                        batch = 0;
+                    }
+                }
+                if (batch > 0) totalRows += ps.executeBatch().length;
+            }
+        }
+
+        // Kết thúc dòng in bằng tổng số bản ghi
+        System.out.println(totalRows + " rows.");
+        return totalRows;
+    }
+
+    private static int loadDimensionIncremental(Connection warehouse, Connection staging,
+                                                String tableName, String pkColumnName) throws SQLException {
+
+        System.out.print(" Loading  " + tableName + " : ");
+        int totalRows = 0;
+
+        String columns = getColumnList(staging, tableName);
+        String placeholders = columns.replaceAll("[^,]+", "?");
+
+        String insertSql = "INSERT INTO " + tableName + " (" + columns + ") VALUES (" + placeholders + ") ON CONFLICT (" + pkColumnName + ") DO NOTHING";
+
+        try (PreparedStatement ps = warehouse.prepareStatement(insertSql);
+             Statement sel = staging.createStatement()) {
+
+            try (ResultSet rs = sel.executeQuery("SELECT " + columns + " FROM " + tableName)) {
+                int batch = 0;
+                while (rs.next()) {
+                    for (int i = 1; i <= rs.getMetaData().getColumnCount(); i++) {
+                        ps.setObject(i, rs.getObject(i));
+                    }
+                    ps.addBatch();
+                    batch++;
+
+                    if (batch >= 5000) {
+                        totalRows += ps.executeBatch().length;
+                        batch = 0;
+                    }
+                }
+                if (batch > 0) totalRows += ps.executeBatch().length;
+            }
+        }
+
+        System.out.println(totalRows + " rows.");
+        return totalRows;
+    }
+
+    // ========================================================================
+    // HÀM PHỤ TRỢ: Get Column List - GIỮ NGUYÊN
+    // ========================================================================
+    private static String getColumnList(Connection conn, String tableName) throws SQLException {
+        String sql =
+                "SELECT string_agg('\"' || column_name || '\"', ',') " +
+                        "FROM information_schema.columns " +
+                        "WHERE table_name = ? AND table_schema = current_schema()";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, tableName);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next() && rs.getString(1) != null)
+                    return rs.getString(1);
+            }
+        }
+
+        throw new SQLException("Cannot get columns for table: " + tableName);
+    }
+
+    // ========================================================================
+    // (5) CONNECT DB - GIỮ NGUYÊN
+    // ========================================================================
+    private static DBConn connectWarehouseDB(LoadConfig config) throws Exception {
+        Element database = LoadConfig.getElement(config.getXmlDoc(), "database");
+        Element warehouse = LoadConfig.getChildElement(database, "warehouse");
+        return new DBConn(
+                LoadConfig.getValue(warehouse, "url"),
+                LoadConfig.getValue(warehouse, "username"),
+                LoadConfig.getValue(warehouse, "password")
+        );
+    }
+
+    private static DBConn connectControlDB(LoadConfig config) throws Exception {
+        Element control = LoadConfig.getElement(config.getXmlDoc(), "control");
+        return new DBConn(
+                LoadConfig.getValue(control, "url"),
+                LoadConfig.getValue(control, "username"),
+                LoadConfig.getValue(control, "password")
+        );
+    }
+
+    private static DBConn connectStagingDB(LoadConfig config) throws Exception {
+        Element database = LoadConfig.getElement(config.getXmlDoc(), "database");
+        Element staging = LoadConfig.getChildElement(database, "staging");
+        return new DBConn(
+                LoadConfig.getValue(staging, "url"),
+                LoadConfig.getValue(staging, "username"),
+                LoadConfig.getValue(staging, "password")
+        );
     }
 }
