@@ -64,16 +64,18 @@ public class LoadToDataWarehouse {
     }
 
     // ========================================================================
-    // (1) CHECK TODAY & (2) LOG PROCESS - GIỮ NGUYÊN
+    // (1) CHECK TODAY & (2) LOG PROCESS - ĐÃ SỬA
     // ========================================================================
     private static void checkTodayWarehouseLoadSuccess() throws Exception {
         System.out.println("[Check] Kiểm tra xem hôm nay đã Load Warehouse chưa...");
-        String sql = "SELECT check_today_process_success('WA_Load_WH') AS success";
+        String sql = "SELECT check_today_success_loadwarehouse(?) AS success";
         final boolean[] alreadyDone = {false};
 
+        // SỬA ĐỔI: Sử dụng "LOD_DW" làm tiền tố.
+        // Hàm PL/pgSQL sử dụng LIKE 'LOD_DW' || '%' để khớp với 'LOD_DW_YYYYMMDD'
         controlDB.executeQuery(sql, rs -> {
             if (rs.next()) alreadyDone[0] = rs.getBoolean("success");
-        });
+        }, "LOD_DW"); // <<< Đã sửa thành "LOD_DW" (Bỏ dấu gạch dưới cuối)
 
         if (alreadyDone[0]) {
             String msg = "Hôm nay đã chạy Load to Data Warehouse thành công rồi. Dừng tiến trình để tránh duplicate.";
@@ -87,11 +89,14 @@ public class LoadToDataWarehouse {
 
     private static String prepareWarehouseLoadProcess() throws Exception {
         System.out.println("[Log] Tạo log process cho Load Warehouse...");
-        String processName = "WA_Load_WH_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+
+        // Tiền tố LOD_DW đã được sửa ở bước trước
+        String processName = "LOD_DW_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
 
         // Tạo hoặc lấy config_process
+        // SỬA ĐỔI: Thay 'datawarehouse' bằng 'warehouse' trong tham số thứ 4
         String sqlConfig = String.format(
-                "SELECT get_or_create_config_process('%s', 'load_warehouse', 'staging_to_warehouse', 'datawarehouse', 'dim_and_fact_tables')",
+                "SELECT get_or_create_process_loadwarehouse('%s', 'load_warehouse', 'staging_to_warehouse', 'warehouse', 'dim_and_fact_tables')",
                 processName
         );
 
@@ -102,7 +107,7 @@ public class LoadToDataWarehouse {
         if (configId[0] == 0) throw new Exception("Không tạo được config_process");
 
         // Tạo execution log
-        String sqlLog = "SELECT create_new_process_log(" + configId[0] + ")";
+        String sqlLog = "SELECT create_new_log_loadwarehouse(" + configId[0] + ")";
         final String[] execId = {null};
         controlDB.executeQuery(sqlLog, rs -> {
             if (rs.next()) execId[0] = rs.getString(1);
@@ -116,7 +121,10 @@ public class LoadToDataWarehouse {
 
     private static void updateProcessLogStatus(String execId, String status, int inserted, int failed, String message) {
         try {
-            String sql = "SELECT update_process_log_status(?, ?::process_status, ?, ?, ?)";
+            // SỬA: Thay thế 'update_process_log_status' bằng 'update_log_status_loadwarehouse'
+            String sql = "SELECT update_log_status_loadwarehouse(?, ?::process_status, ?, ?, ?)";
+            // Lưu ý: Hàm update_log_status_loadwarehouse trả về VOID, nhưng ta vẫn dùng executeQuery
+            // với ResultSetHandler rỗng.
             controlDB.executeQuery(sql, rs -> {}, execId, status, inserted, failed, message);
             System.out.println("[Log] Đã cập nhật trạng thái: " + status);
         } catch (Exception e) {
@@ -125,21 +133,21 @@ public class LoadToDataWarehouse {
     }
 
     // ========================================================================
-    // (3) GỬI EMAIL - GIỮ NGUYÊN
+    // CÁC HÀM KHÁC - GIỮ NGUYÊN
     // ========================================================================
     private static void sendSuccessEmail(int total) {
         String subject = "Weather ETL - LOAD TO DATA WAREHOUSE THÀNH CÔNG";
 
         String body = """
                 ======================================
-                   WEATHER ETL - LOAD TO WAREHOUSE   
-                          THÀNH CÔNG          
+                   WEATHER ETL - LOAD TO WAREHOUSE
+                          THÀNH CÔNG
                 ======================================
-                
+
                 Execution ID : %s
                 Thời gian    : %s
                 Tổng bản ghi : %,d records
-                
+
                 Hệ thống hoạt động ổn định.
                 """.formatted(
                 executionId,
@@ -156,16 +164,16 @@ public class LoadToDataWarehouse {
 
         String body = """
                 ======================================
-                   WEATHER ETL - LOAD TO WAREHOUSE   
-                              THẤT BẠI               
+                   WEATHER ETL - LOAD TO WAREHOUSE
+                              THẤT BẠI
                 ======================================
-                
+
                 Execution ID : %s
                 Thời gian    : %s
-                
+
                 Lỗi:
                 %s
-                
+
                 Cần kiểm tra ngay.
                 """
                 .formatted(
