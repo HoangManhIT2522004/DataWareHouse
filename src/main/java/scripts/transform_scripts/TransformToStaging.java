@@ -19,7 +19,7 @@ public class TransformToStaging {
 
     public static void main(String[] args) {
         System.out.println("========================================");
-        System.out.println("   WEATHER ETL - STEP 7: TRANSFORM (FINAL FIX)");
+        System.out.println("   WEATHER ETL - STEP 7: TRANSFORM (UPDATED)");
         System.out.println("========================================");
 
         String execId = null;
@@ -82,20 +82,23 @@ public class TransformToStaging {
                             "FROM raw_weather_condition r " +
                             "ORDER BY r.code, r.batch_id DESC");
 
-            // 1.3 Observation [QUAN TRỌNG: Đã sửa JSON path]
+            // 1.3 Observation (Đã fix boolean)
             totalUpdated += executeSQL(conn, "Staging Observation",
                     "TRUNCATE TABLE stg_weather_observation",
                     "INSERT INTO stg_weather_observation (" +
                             "   observation_id, location_id, condition_id, observation_date, observation_time, last_updated_epoch, " +
+                            "   is_day, " +
                             "   temp_c, feelslike_c, pressure_mb, precip_mm, humidity_pct, cloud_pct, uv_index, " +
                             "   vis_km, wind_kph, gust_kph, temp_f, feelslike_f, pressure_in, precip_in, vis_miles, wind_mph, gust_mph, wind_deg, wind_dir, " +
                             "   record_status, hash_key, source_system, batch_id" +
                             ") " +
-                            "SELECT DISTINCT ON (r.location_name, r.last_updated_epoch) " +
-                            "   MD5(CONCAT(r.location_name, r.last_updated_epoch)), r.location_name, " +
-                            // --- FIX: Lấy trực tiếp từ flat JSON (csv header là condition_code) ---
+                            "SELECT DISTINCT ON (r.location_name, r.last_updated) " +
+                            "   MD5(CONCAT(r.location_name, r.last_updated)), r.location_name, " +
                             "   (r.raw_payload->>'condition_code'), " +
-                            "   CAST(r.last_updated AS date), CAST(r.last_updated AS timestamp), CAST(r.last_updated_epoch AS int8), " +
+                            "   CAST(r.last_updated AS date), " +
+                            "   CAST(r.last_updated AS timestamp), " +
+                            "   CAST(EXTRACT(EPOCH FROM CAST(r.last_updated AS TIMESTAMP)) AS int8), " +
+                            "   CAST(r.is_day AS boolean), " +
                             "   CAST(r.temp_c AS float8), CAST(r.feelslike_c AS float8), CAST(r.pressure_mb AS float8), CAST(r.precip_mm AS float8), " +
                             "   CAST(r.humidity AS int2), CAST(r.cloud AS int2), CAST(r.uv AS float8), " +
                             "   CAST(r.vis_km AS float8), CAST(r.wind_kph AS float8), CAST(r.gust_kph AS float8), " +
@@ -103,10 +106,10 @@ public class TransformToStaging {
                             "   CAST(r.vis_miles AS float8), CAST(r.wind_mph AS float8), CAST(r.gust_mph AS float8), " +
                             "   CAST(r.wind_degree AS int4), r.wind_dir, " +
                             "   'pending', " +
-                            "   MD5(CONCAT(r.temp_c, r.humidity, r.precip_mm, r.uv, r.wind_kph, r.pressure_mb, r.vis_km)), " +
+                            "   MD5(CONCAT(r.temp_c, r.humidity, r.precip_mm, r.uv, r.wind_kph, r.pressure_mb, r.vis_km, r.is_day)), " +
                             "   r.source_system, r.batch_id " +
                             "FROM raw_weather_observation r " +
-                            "ORDER BY r.location_name, r.last_updated_epoch, r.batch_id DESC");
+                            "ORDER BY r.location_name, r.last_updated, r.batch_id DESC");
 
             // 1.4 Air Quality
             totalUpdated += executeSQL(conn, "Staging Air Quality",
@@ -125,14 +128,16 @@ public class TransformToStaging {
             // --- PHASE 2: STAGING TO DIM/FACT ---
             System.out.println("\n--- [PHASE 2] STAGING TO DIM/FACT ---");
 
-            // 2.1 Dim Location
+            // 2.1 Dim Location [UPDATED: Thêm localtime & localtime_epoch]
             totalUpdated += executeUpdate(conn, "Dim Location",
-                    "INSERT INTO dim_location (location_id, city, region, country, lat, lon, tz_id, hash_key, updated_at) " +
-                            "SELECT location_id, city, region, country, lat, lon, tz_id, hash_key, CURRENT_TIMESTAMP FROM stg_location " +
+                    "INSERT INTO dim_location (location_id, city, region, country, lat, lon, tz_id, \"localtime\", localtime_epoch, hash_key, updated_at) " +
+                            "SELECT location_id, city, region, country, lat, lon, tz_id, \"localtime\", localtime_epoch, hash_key, CURRENT_TIMESTAMP FROM stg_location " +
                             "ON CONFLICT (location_id) DO UPDATE SET " +
                             "   city = EXCLUDED.city, region = EXCLUDED.region, lat = EXCLUDED.lat, lon = EXCLUDED.lon, " +
+                            "   \"localtime\" = EXCLUDED.\"localtime\", localtime_epoch = EXCLUDED.localtime_epoch, " + // <-- [NEW] Update fields
                             "   hash_key = EXCLUDED.hash_key, updated_at = CURRENT_TIMESTAMP " +
-                            "WHERE dim_location.hash_key IS DISTINCT FROM EXCLUDED.hash_key");
+                            "WHERE dim_location.hash_key IS DISTINCT FROM EXCLUDED.hash_key " +
+                            "   OR dim_location.localtime_epoch IS DISTINCT FROM EXCLUDED.localtime_epoch"); // <-- [NEW] Force update nếu giờ thay đổi
 
             // 2.2 Dim Condition
             totalUpdated += executeUpdate(conn, "Dim Condition",
@@ -142,23 +147,24 @@ public class TransformToStaging {
                             "   text = EXCLUDED.text, icon = EXCLUDED.icon, hash_key = EXCLUDED.hash_key, updated_at = CURRENT_TIMESTAMP " +
                             "WHERE dim_weather_condition.hash_key IS DISTINCT FROM EXCLUDED.hash_key");
 
-            // 2.3 Fact Weather Daily [QUAN TRỌNG: Đã bỏ CAST để fix lỗi type]
+            // 2.3 Fact Weather Daily (Đã fix last_updated_epoch & is_day)
             totalUpdated += executeUpdate(conn, "Fact Weather",
                     "INSERT INTO fact_weather_daily (" +
                             "   location_sk, condition_sk, date_sk, observation_date, observation_time, " +
+                            "   last_updated_epoch, is_day, " +
                             "   temp_c, humidity_pct, precip_mm, uv_index, " +
                             "   vis_km, wind_kph, gust_kph, temp_f, feelslike_f, pressure_in, precip_in, vis_miles, wind_mph, gust_mph, wind_deg, wind_dir, " +
                             "   feelslike_c, pressure_mb, cloud_pct, batch_id, " +
                             "   source_system, loaded_at" +
                             ") " +
                             "SELECT dl.location_sk, dwc.condition_sk, dd.date_sk, s.observation_date, s.observation_time, " +
+                            "   s.last_updated_epoch, s.is_day, " +
                             "   s.temp_c, s.humidity_pct, s.precip_mm, s.uv_index, " +
                             "   s.vis_km, s.wind_kph, s.gust_kph, s.temp_f, s.feelslike_f, s.pressure_in, s.precip_in, s.vis_miles, s.wind_mph, s.gust_mph, s.wind_deg, s.wind_dir, " +
                             "   s.feelslike_c, s.pressure_mb, s.cloud_pct, s.batch_id, " +
                             "   s.source_system, CURRENT_TIMESTAMP " +
                             "FROM stg_weather_observation s " +
                             "JOIN dim_location dl ON s.location_id = dl.location_id " +
-                            // --- FIX: So sánh String = String (không CAST) ---
                             "LEFT JOIN dim_weather_condition dwc ON s.condition_id = dwc.condition_id " +
                             "JOIN dim_date dd ON s.observation_date = dd.full_date " +
                             "ON CONFLICT (location_sk, observation_time) DO UPDATE SET " +
@@ -166,6 +172,7 @@ public class TransformToStaging {
                             "   temp_c = EXCLUDED.temp_c, humidity_pct = EXCLUDED.humidity_pct, precip_mm = EXCLUDED.precip_mm, uv_index = EXCLUDED.uv_index, " +
                             "   vis_km = EXCLUDED.vis_km, wind_kph = EXCLUDED.wind_kph, gust_kph = EXCLUDED.gust_kph, " +
                             "   feelslike_c = EXCLUDED.feelslike_c, pressure_mb = EXCLUDED.pressure_mb, cloud_pct = EXCLUDED.cloud_pct, " +
+                            "   last_updated_epoch = EXCLUDED.last_updated_epoch, is_day = EXCLUDED.is_day, " +
                             "   batch_id = EXCLUDED.batch_id, loaded_at = CURRENT_TIMESTAMP " +
                             "WHERE fact_weather_daily.temp_c IS DISTINCT FROM EXCLUDED.temp_c " +
                             "   OR fact_weather_daily.condition_sk IS DISTINCT FROM EXCLUDED.condition_sk " +
