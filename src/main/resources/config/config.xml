@@ -56,7 +56,7 @@
             <onFileExists>true</onFileExists>
         </notifications>
     </email>
-    
+
     <!-- Logging Configuration -->
     <logging>
         <level>INFO</level>

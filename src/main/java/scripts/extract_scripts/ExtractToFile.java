@@ -55,10 +55,22 @@ public class ExtractToFile {
     public static DBConn connectDB(LoadConfig config) {
         System.out.println("[Step 2] Connecting to database...");
         try {
-            Element control = LoadConfig.getElement(config.getXmlDoc(), "control");
+            // Get database element first, then control inside it
+            Element database = LoadConfig.getElement(config.getXmlDoc(), "database");
+            Element control = LoadConfig.getChildElement(database, "control");
+
+            // Debug logging
+            System.out.println("[DEBUG] Database element: " + (database != null ? "Found" : "NULL"));
+            System.out.println("[DEBUG] Control element: " + (control != null ? "Found" : "NULL"));
+
             String url = LoadConfig.getValue(control, "url");
             String username = LoadConfig.getValue(control, "username");
             String password = LoadConfig.getValue(control, "password");
+
+            // Debug logging
+            System.out.println("[DEBUG] URL: " + url);
+            System.out.println("[DEBUG] Username: " + username);
+            System.out.println("[DEBUG] Password: " + (password.isEmpty() ? "EMPTY!" : "***"));
 
             DBConn db = new DBConn(url, username, password);
 
@@ -218,14 +230,46 @@ public class ExtractToFile {
         }
     }
 
+    /**
+     * ============================================================
+     * Print usage instructions
+     * ============================================================
+     */
+    private static void printUsage() {
+        System.out.println("Usage: java ExtractToFile <config_path> <extract_config_path>");
+        System.out.println();
+        System.out.println("Arguments:");
+        System.out.println("  config_path         : Path to main configuration file (e.g., config/config.xml)");
+        System.out.println("  extract_config_path : Path to extract configuration file (e.g., config/extract_config.xml)");
+        System.out.println();
+        System.out.println("Example:");
+        System.out.println("  java ExtractToFile config/config.xml config/extract_config.xml");
+    }
+
     public static void main(String[] args) {
         System.out.println("========================================");
         System.out.println("Weather ETL - Extract Process Started");
         System.out.println("========================================\n");
 
+        // Check arguments
+        if (args.length < 2) {
+            System.err.println("ERROR: Missing required arguments!");
+            System.err.println();
+            printUsage();
+            System.exit(1);
+        }
+
+        String configPath = args[0];
+        String extractConfigPath = args[1];
+
+        System.out.println("Configuration:");
+        System.out.println("  - Main Config    : " + configPath);
+        System.out.println("  - Extract Config : " + extractConfigPath);
+        System.out.println();
+
         try {
             // Step 1: Load config
-            LoadConfig config = loadConfig("config/config.xml");
+            LoadConfig config = loadConfig(configPath);
 
             // Step 2: Connect DB
             controlDB = connectDB(config);
@@ -234,7 +278,7 @@ public class ExtractToFile {
             checkTodayExtractSuccess();
 
             // Step 4: Prepare extract create config & log (Load extract config)
-            LoadConfig extractConfig = loadConfig("config/extract_config.xml");
+            LoadConfig extractConfig = loadConfig(extractConfigPath);
             ExtractWeatherData.ExtractInfo extractInfo = prepareExtract(extractConfig);
 
             // Step 5: Extract weather to csv file
