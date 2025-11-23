@@ -243,7 +243,7 @@ public class ExtractToFile {
                     extractInfo.getExecutionId(),
                     extractInfo.getSourceUrl(),
                     extractInfo.getOutputPath(),
-                    controlDB  // ← Pass DB connection
+                    controlDB
             );
 
             // SUCCESS!

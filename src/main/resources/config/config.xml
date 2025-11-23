@@ -32,14 +32,6 @@
 
     </database>
 
-    <!-- File Path Configuration -->
-<!--    <paths>-->
-<!--        <output>D:/weather_data/extract</output>-->
-<!--        <archive>D:/weather_data/archive</archive>-->
-<!--        <error>D:/weather_data/error</error>-->
-<!--        <log>D:/weather_data/logs</log>-->
-<!--    </paths>-->
-
     <!-- Email Configuration -->
     <email>
         <enabled>true</enabled>
@@ -55,7 +47,7 @@
             <name>Weather ETL System</name>
         </from>
         <to>
-            <address></address>
+            <address>manhhoang2522004it@gmail.com</address>
             <name>System Administrator</name>
         </to>
         <notifications>
@@ -64,15 +56,7 @@
             <onFileExists>true</onFileExists>
         </notifications>
     </email>
-
-    <!-- ETL Process Configuration -->
-    <etl>
-        <checkFileExists>true</checkFileExists>
-        <archiveAfterLoad>true</archiveAfterLoad>
-        <retryOnFailure>3</retryOnFailure>
-        <retryDelay>5000</retryDelay>
-    </etl>
-
+    
     <!-- Logging Configuration -->
     <logging>
         <level>INFO</level>
@@ -81,12 +65,5 @@
         <maxFileSize>10MB</maxFileSize>
         <maxHistory>30</maxHistory>
     </logging>
-
-    <!-- Scheduler Configuration -->
-    <scheduler>
-        <enabled>false</enabled>
-        <cronExpression>0 0 7 * * ?</cronExpression> <!-- Chạy lúc 7:00 AM mỗi ngày -->
-        <timezone>Asia/Ho_Chi_Minh</timezone>
-    </scheduler>
 
 </configuration>
