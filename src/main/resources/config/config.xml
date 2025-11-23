@@ -21,14 +21,14 @@
             <url>jdbc:postgresql://localhost:5432/staging</url>
         </staging>
 
-        <datawarehouse>
+        <warehouse>
             <host>localhost</host>
             <port>5432</port>
             <name>warehouse</name>
             <username>postgres</username>
             <password></password>
             <url>jdbc:postgresql://localhost:5432/warehouse</url>
-        </datawarehouse>
+        </warehouse>
 
     </database>
 
