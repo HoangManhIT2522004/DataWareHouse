@@ -1,9 +1,9 @@
 package scripts.load_scripts;
 
-import org.w3c.dom.Element;
 import utils.DBConn;
 import utils.EmailSender;
 import utils.LoadConfig;
+import org.w3c.dom.Element;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -12,10 +12,9 @@ public class LoadToDataWarehouse {
 
     private static DBConn controlDB;
     private static DBConn warehouseDB;
-    private static String currentExecutionId;
-    private static final DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final DateTimeFormatter idFormat = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+    private static String loadExecutionId;
 
+    private static final DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final int MAX_RETRIES = 3;
     private static final long RETRY_DELAY_MINUTES = 15;
 
@@ -23,111 +22,175 @@ public class LoadToDataWarehouse {
         int attempt = 1;
 
         while (attempt <= MAX_RETRIES) {
-            System.out.println("\n=== LẦN CHẠY THỨ " + attempt + " / " + MAX_RETRIES + " ===");
-            System.out.println("Thời gian bắt đầu: " + LocalDateTime.now().format(dtf));
+            System.out.println("\n========================================");
+            System.out.println("   WEATHER ETL - STEP 7: LOAD TO WAREHOUSE");
+            System.out.println("   Lần chạy thứ: " + attempt + "/" + MAX_RETRIES);
+            System.out.println("   Thời gian: " + LocalDateTime.now().format(dtf));
+            System.out.println("========================================");
 
             controlDB = null;
             warehouseDB = null;
-            currentExecutionId = null;
+            loadExecutionId = null;
 
             try {
-                LoadConfig config = new LoadConfig("D:/DataWareHouse/src/main/java/config/config.xml");
+                // 1. Load config (giống hệt load_to_staging)
+                LoadConfig config = new LoadConfig("config/config.xml");
 
-                controlDB   = connectControl(config);
-                warehouseDB = connectWarehouse(config);
+                // 2. Kết nối DB
+                controlDB = connectControlDB(config);
+                warehouseDB = connectWarehouseDB(config);
 
-                currentExecutionId = createNewLoadLog();
-                System.out.println("→ Execution ID: " + currentExecutionId + "\n");
+                // 3. KIỂM TRA HÔM NAY ĐÃ CHẠY LOAD WAREHOUSE CHƯA (idempotent)
+                checkTodayWarehouseLoadSuccess();
 
-                int loc  = call("load_dim_location");
-                int cond = call("load_dim_weather_condition");
-                int fact = call("load_fact_weather_daily");
-                int aqi  = call("load_fact_air_quality_daily");
+                // 4. Tạo log execution chính thức (EXEC-20251122-001)
+                loadExecutionId = prepareWarehouseLoadProcess();
+
+                // 5. Thực hiện Load vào Warehouse
+                int loc  = callLoadFunction("load_dim_location");
+                int cond = callLoadFunction("load_dim_weather_condition");
+                int fact = callLoadFunction("load_fact_weather_daily");
+                int aqi  = callLoadFunction("load_fact_air_quality_daily");
 
                 int total = loc + cond + fact + aqi;
 
-                updateLogSuccess(total);
+                // 6. Cập nhật log thành công
+                updateProcessLogStatus(loadExecutionId, "success", total, 0, "Loaded to Warehouse successfully");
+
+                // 7. Gửi email báo thành công
                 sendSuccessEmail(loc, cond, fact, aqi, total, attempt);
 
-                System.out.println("\nLOAD HOÀN TẤT THÀNH CÔNG! (lần thứ " + attempt + ")");
-                System.out.println("Tổng cộng: " + String.format("%,d", total) + " bản ghi đã được load vào Warehouse");
+                System.out.println("\nLOAD TO DATA WAREHOUSE HOÀN TẤT THÀNH CÔNG!");
+                System.out.println("Tổng cộng: " + String.format("%,d", total) + " bản ghi");
+                System.out.println("Execution ID: " + loadExecutionId);
+                System.out.println("========================================");
                 System.exit(0);
 
             } catch (Exception e) {
                 System.err.println("LẦN " + attempt + " THẤT BẠI: " + e.getMessage());
                 e.printStackTrace();
 
-                if (currentExecutionId != null) {
-                    try { updateLogFailed("Lần " + attempt + ": " + e.toString()); } catch (Exception ignored) {}
+                if (loadExecutionId != null) {
+                    try {
+                        updateProcessLogStatus(loadExecutionId, "failed", 0, 0,
+                                "Attempt " + attempt + " failed: " + e.getMessage());
+                    } catch (Exception ignored) {}
                 }
+
                 sendErrorEmail(e, attempt);
 
-                if (attempt < MAX_RETRIES) {
-                    System.out.println("Đang chờ " + RETRY_DELAY_MINUTES + " phút để thử lại lần " + (attempt + 1) + "...");
-                    try {
-                        Thread.sleep(RETRY_DELAY_MINUTES * 60 * 1000);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        System.out.println("Bị gián đoạn khi chờ retry!");
-                        System.exit(1);
-                    }
-                } else {
-                    System.out.println("\nĐÃ THỬ " + MAX_RETRIES + " LẦN NHƯNG VẪN LỖI → DỪNG HOÀN TOÀN!");
+                if (attempt == MAX_RETRIES) {
+                    System.err.println("ĐÃ THỬ " + MAX_RETRIES + " LẦN - DỪNG HOÀN TOÀN!");
+                    System.exit(1);
+                }
+
+                System.out.println("Chờ " + RETRY_DELAY_MINUTES + " phút để thử lại lần " + (attempt + 1) + "...");
+                try {
+                    Thread.sleep(RETRY_DELAY_MINUTES * 60 * 1000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
                     System.exit(1);
                 }
             }
-
             attempt++;
         }
     }
 
-    // ================== CÁC HÀM HỖ TRỢ (GIỮ NGUYÊN) ==================
+    // ============================================================
+    // CONNECTION & CONFIG (GIỐNG HỆT load_to_staging)
+    // ============================================================
 
-    private static DBConn connectControl(LoadConfig c) throws Exception {
-        Element e = LoadConfig.getElement(c.getXmlDoc(), "control");
-        return connect(e, "Control DB");
+    private static DBConn connectControlDB(LoadConfig config) throws Exception {
+        Element control = LoadConfig.getElement(config.getXmlDoc(), "control");
+        return new DBConn(
+                LoadConfig.getValue(control, "url"),
+                LoadConfig.getValue(control, "username"),
+                LoadConfig.getValue(control, "password")
+        );
     }
 
-    private static DBConn connectWarehouse(LoadConfig c) throws Exception {
-        Element e = LoadConfig.getElement(c.getXmlDoc(), "datawarehouse");
-        return connect(e, "DataWarehouse DB");
+    private static DBConn connectWarehouseDB(LoadConfig config) throws Exception {
+        Element database = LoadConfig.getElement(config.getXmlDoc(), "database");
+        Element warehouse = LoadConfig.getChildElement(database, "datawarehouse");
+        return new DBConn(
+                LoadConfig.getValue(warehouse, "url"),
+                LoadConfig.getValue(warehouse, "username"),
+                LoadConfig.getValue(warehouse, "password")
+        );
     }
 
-    private static DBConn connect(Element e, String name) throws Exception {
-        String url  = LoadConfig.getValue(e, "url");
-        String user = LoadConfig.getValue(e, "username");
-        String pass = LoadConfig.getValue(e, "password");
-        DBConn db = new DBConn(url, user, pass);
-        db.executeQuery("SELECT 1", rs -> {});
-        System.out.println("Kết nối thành công: " + name);
-        return db;
-    }
+    // ============================================================
+    // IDEMPOTENT CHECK - Giống hệt load_to_staging
+    // ============================================================
 
-    private static String createNewLoadLog() throws Exception {
-        String baseId = "LOAD_" + LocalDateTime.now().format(idFormat);
-        String newId = baseId;
-        int counter = 1;
+    private static void checkTodayWarehouseLoadSuccess() throws Exception {
+        System.out.println("[Check] Kiểm tra xem hôm nay đã Load Warehouse chưa...");
+        String sql = "SELECT check_today_process_success('WA_Load_WH') AS success";
+        final boolean[] alreadyDone = {false};
 
-        while (true) {
-            try {
-                controlDB.executeUpdate(
-                        "INSERT INTO log_process (execution_id, start_time, status) VALUES (?, NOW(), 'running'::process_status)",
-                        newId
-                );
-                break;
-            } catch (Exception e) {
-                if (e.getMessage() != null && e.getMessage().contains("duplicate key")) {
-                    newId = baseId + "_" + counter++;
-                } else {
-                    throw e;
-                }
-            }
+        controlDB.executeQuery(sql, rs -> {
+            if (rs.next()) alreadyDone[0] = rs.getBoolean("success");
+        });
+
+        if (alreadyDone[0]) {
+            String msg = "Hôm nay đã chạy Load to Data Warehouse thành công rồi. Dừng tiến trình để tránh duplicate.";
+            System.out.println(msg);
+            EmailSender.sendEmail("ETL Notification: Load Warehouse Already Done Today", msg);
+            System.exit(0);
+        } else {
+            System.out.println("Chưa chạy Load Warehouse hôm nay. Tiếp tục...");
         }
-        return newId;
     }
 
-    private static int call(String functionName) throws Exception {
-        System.out.println("Đang gọi function: " + functionName + " ...");
+    // ============================================================
+    // LOGGING - DÙNG CHUẨN controlDB (giống load_to_staging)
+    // ============================================================
+
+    private static String prepareWarehouseLoadProcess() throws Exception {
+        System.out.println("[Log] Tạo log process cho Load Warehouse...");
+        String processName = "WA_Load_WH_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+
+        // Tạo hoặc lấy config_process
+        String sqlConfig = String.format(
+                "SELECT get_or_create_config_process('%s', 'load_warehouse', 'staging_to_warehouse', 'datawarehouse', 'dim_and_fact_tables')",
+                processName
+        );
+
+        final int[] configId = {0};
+        controlDB.executeQuery(sqlConfig, rs -> {
+            if (rs.next()) configId[0] = rs.getInt(1);
+        });
+        if (configId[0] == 0) throw new Exception("Không tạo được config_process");
+
+        // Tạo execution log
+        String sqlLog = "SELECT create_new_process_log(" + configId[0] + ")";
+        final String[] execId = {null};
+        controlDB.executeQuery(sqlLog, rs -> {
+            if (rs.next()) execId[0] = rs.getString(1);
+        });
+
+        if (execId[0] == null) throw new Exception("Không tạo được execution log");
+
+        System.out.println("Execution ID: " + execId[0]);
+        return execId[0];
+    }
+
+    private static void updateProcessLogStatus(String execId, String status, int inserted, int failed, String message) {
+        try {
+            String sql = "SELECT update_process_log_status(?, ?::process_status, ?, ?, ?)";
+            controlDB.executeQuery(sql, rs -> {}, execId, status, inserted, failed, message);
+            System.out.println("[Log] Đã cập nhật trạng thái: " + status);
+        } catch (Exception e) {
+            System.err.println("Không cập nhật được log: " + e.getMessage());
+        }
+    }
+
+    // ============================================================
+    // GỌI CÁC FUNCTION TRONG WAREHOUSE
+    // ============================================================
+
+    private static int callLoadFunction(String functionName) throws Exception {
+        System.out.println("Đang thực thi: " + functionName + "() ...");
         final int[] count = {0};
         warehouseDB.executeQuery("SELECT " + functionName + "() AS rows", rs -> {
             if (rs.next()) count[0] = rs.getInt("rows");
@@ -136,105 +199,79 @@ public class LoadToDataWarehouse {
         return count[0];
     }
 
-    private static void updateLogSuccess(int total) throws Exception {
-        controlDB.executeUpdate(
-                "UPDATE log_process SET status = 'success'::process_status, records_inserted = ?, end_time = NOW() WHERE execution_id = ?",
-                total, currentExecutionId
-        );
-    }
-
-    private static void updateLogFailed(String msg) {
-        try {
-            controlDB.executeUpdate(
-                    "UPDATE log_process SET status = 'failed'::process_status, error_message = ?, end_time = NOW() WHERE execution_id = ?",
-                    msg.length() > 2000 ? msg.substring(0, 2000) : msg, currentExecutionId
-            );
-        } catch (Exception ignored) {}
-    }
-
-    // ================== EMAIL BÁO CÁO MỚI - ĐẸP NHƯ EXTRACT ==================
+    // ============================================================
+    // EMAIL BÁO CÁO (GIỮ NGUYÊN ĐẸP NHƯ CŨ)
+    // ============================================================
 
     private static void sendSuccessEmail(int loc, int cond, int fact, int aqi, int total, int attempt) {
         String subject = "Weather ETL - LOAD TO WAREHOUSE THÀNH CÔNG " +
-                (attempt > 1 ? "(Sau " + (attempt - 1) + " lần retry)" : "");
+                (attempt > 1 ? "(sau " + (attempt-1) + " lần retry)" : "");
 
-        StringBuilder body = new StringBuilder();
-        body.append("======================================\n");
-        body.append("   WEATHER ETL - LOAD TO DATA WAREHOUSE   \n");
-        body.append("          HOÀN TẤT THÀNH CÔNG           \n");
-        body.append("======================================\n\n");
+        String body = """
+            ======================================
+               WEATHER ETL - LOAD TO DATA WAREHOUSE   
+                      HOÀN TẤT THÀNH CÔNG           
+            ======================================
+            
+            Execution ID       : %s
+            Thời gian          : %s
+            Số lần thử         : %d %s
+            Tổng bản ghi       : %,d records
+            
+            --- CHI TIẾT ---
+            ✓ dim_location           : %,d
+            ✓ dim_weather_condition  : %,d
+            ✓ fact_weather_daily     : %,d
+            ✓ fact_air_quality_daily : %,d
+            
+            Dữ liệu đã được load đầy đủ vào Data Warehouse.
+            Hệ thống hoạt động ổn định!
+            
+            Báo cáo tự động - %s
+            """.formatted(
+                loadExecutionId,
+                LocalDateTime.now().format(dtf),
+                attempt,
+                attempt > 1 ? "(retry thành công)" : "(lần đầu tiên)",
+                total,
+                loc, cond, fact, aqi,
+                LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"))
+        );
 
-        body.append("Execution ID       : ").append(currentExecutionId).append("\n");
-        body.append("Thời gian kết thúc : ").append(LocalDateTime.now().format(dtf)).append("\n");
-        body.append("Số lần thử         : ").append(attempt)
-                .append(attempt > 1 ? " (tự động retry thành công)" : " (thành công ngay lần đầu)").append("\n");
-        body.append("Tổng bản ghi       : ").append(String.format("%,d", total)).append(" records\n\n");
-
-        body.append("--- CHI TIẾT LOAD ---\n");
-        body.append(String.format("✓ load_dim_location          : %,d bản ghi\n", loc));
-        body.append(String.format("✓ load_dim_weather_condition : %,d bản ghi\n", cond));
-        body.append(String.format("✓ load_fact_weather_daily    : %,d bản ghi\n", fact));
-        body.append(String.format("✓ load_fact_air_quality_daily: %,d bản ghi\n", aqi));
-        body.append("\n");
-
-        body.append("Tất cả dữ liệu đã được load thành công vào Data Warehouse.\n");
-        body.append("Hệ thống đang hoạt động ổn định.\n\n");
-
-        body.append("Thời gian báo cáo: ")
-                .append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")));
-
-        EmailSender.sendEmail(subject, body.toString());
+        EmailSender.sendEmail(subject, body);
         System.out.println("Đã gửi email báo thành công!");
     }
 
     private static void sendErrorEmail(Exception e, int attempt) {
-        boolean isFinalFailure = attempt >= MAX_RETRIES;
-
-        String subject = isFinalFailure
-                ? "Weather ETL - LOAD TO WAREHOUSE THẤT BẠI HOÀN TOÀN (sau " + MAX_RETRIES + " lần)"
+        String subject = attempt >= MAX_RETRIES
+                ? "Weather ETL - LOAD TO WAREHOUSE THẤT BẠI HOÀN TOÀN"
                 : "Weather ETL - LOAD TO WAREHOUSE THẤT BẠI (lần " + attempt + "/" + MAX_RETRIES + ")";
 
-        StringBuilder body = new StringBuilder();
-        body.append("======================================\n");
-        body.append("   WEATHER ETL - LOAD TO DATA WAREHOUSE   \n");
-        body.append(isFinalFailure ? "        THẤT BẠI HOÀN TOÀN        \n" : "          ĐANG CÓ LỖI (retry)         \n");
-        body.append("======================================\n\n");
+        String body = """
+            ======================================
+               WEATHER ETL - LOAD TO DATA WAREHOUSE   
+                      %s                     
+            ======================================
+            
+            Execution ID : %s
+            Lần thử      : %d/%d
+            Thời gian    : %s
+            
+            Lỗi: %s
+            
+            %s
+            """.formatted(
+                attempt >= MAX_RETRIES ? "THẤT BẠI HOÀN TOÀN" : "ĐANG LỖI - SẼ RETRY",
+                loadExecutionId != null ? loadExecutionId : "N/A",
+                attempt, MAX_RETRIES,
+                LocalDateTime.now().format(dtf),
+                e.getMessage(),
+                attempt < MAX_RETRIES
+                        ? "Sẽ tự động thử lại sau " + RETRY_DELAY_MINUTES + " phút..."
+                        : "ĐÃ HẾT LẦN THỬ - CẦN CAN THIỆP KHẨN!"
+        );
 
-        body.append("Execution ID : ").append(currentExecutionId != null ? currentExecutionId : "N/A").append("\n");
-        body.append("Lần thử      : ").append(attempt).append("/").append(MAX_RETRIES).append("\n");
-        body.append("Thời gian    : ").append(LocalDateTime.now().format(dtf)).append("\n\n");
-
-        body.append("--- THÔNG TIN LỖI ---\n");
-        body.append("Message : ").append(e.getMessage() != null ? e.getMessage() : "null").append("\n");
-        body.append("Class   : ").append(e.getClass().getName()).append("\n\n");
-
-        body.append("--- STACK TRACE (5 dòng đầu) ---\n");
-        StackTraceElement[] stack = e.getStackTrace();
-        for (int i = 0; i < Math.min(5, stack.length); i++) {
-            body.append("   at ").append(stack[i].toString()).append("\n");
-        }
-        if (stack.length > 5) body.append("   ... (và ").append(stack.length - 5).append(" dòng nữa)\n");
-
-        body.append("\n");
-
-        if (!isFinalFailure) {
-            body.append("Hệ thống sẽ tự động thử lại lần ").append(attempt + 1)
-                    .append(" sau ").append(RETRY_DELAY_MINUTES).append(" phút.\n");
-            body.append("Không cần can thiệp ngay lúc này.\n");
-        } else {
-            body.append("ĐÃ THỬ HẾT ").append(MAX_RETRIES).append(" LẦN → DỪNG HOÀN TOÀN!\n");
-            body.append("Cần kiểm tra khẩn cấp:\n");
-            body.append("- Kết nối Control DB / Data Warehouse?\n");
-            body.append("- Các function load_* có bị lỗi logic?\n");
-            body.append("- Quyền truy cập database?\n");
-            body.append("- Transaction log full / disk full?\n");
-            body.append("- Network timeout?\n");
-        }
-
-        body.append("\nThời gian báo cáo: ")
-                .append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")));
-
-        EmailSender.sendError(subject, body.toString(), e);
+        EmailSender.sendError(subject, body, e);
         System.out.println("Đã gửi email báo lỗi!");
     }
 }
