@@ -194,7 +194,8 @@ public class load_to_staging {
     private static void updateProcessLogStatus(String execId, String status, int inserted, int failed, String message) {
         try {
             String sql = "SELECT update_process_log_status(?, ?::process_status, ?, ?, ?)";
-            controlDB.executeQuery(sql, rs -> {}, execId, status, inserted, failed, message);
+            controlDB.executeQuery(sql, rs -> {
+            }, execId, status, inserted, failed, message);
             System.out.println("[Log] Updated status to: " + status);
         } catch (Exception e) {
             System.err.println("❌ Failed to update log status: " + e.getMessage());
@@ -213,10 +214,18 @@ public class load_to_staging {
         String sqlLoc = "INSERT INTO raw_weather_location (name, region, country, lat, lon, tz_id, \"localtime\", source_system, batch_id, raw_payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)";
         String sqlCond = "INSERT INTO raw_weather_condition (code, text, icon, source_system, batch_id, raw_payload) VALUES (?, ?, ?, ?, ?, ?::jsonb)";
         String sqlAir = "INSERT INTO raw_air_quality (co, no2, o3, so2, pm2_5, pm10, us_epa_index, gb_defra_index, source_system, batch_id, raw_payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)";
-        String sqlObs = "INSERT INTO raw_weather_observation (last_updated, temp_c, temp_f, feelslike_c, feelslike_f, humidity, cloud, vis_km, vis_miles, uv, wind_mph, wind_kph, wind_degree, wind_dir, pressure_mb, pressure_in, precip_mm, precip_in, location_name, source_system, batch_id, raw_payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)";
+
+        // --- ĐÃ SỬA: Thêm gust_mph, gust_kph vào sau cột uv ---
+        String sqlObs = "INSERT INTO raw_weather_observation (" +
+                "last_updated, temp_c, temp_f, feelslike_c, feelslike_f, " +
+                "humidity, cloud, vis_km, vis_miles, uv, " +
+                "gust_mph, gust_kph, " + // <--- MỚI THÊM
+                "wind_mph, wind_kph, wind_degree, wind_dir, " +
+                "pressure_mb, pressure_in, precip_mm, precip_in, " +
+                "location_name, source_system, batch_id, raw_payload" +
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)";
 
         int count = 0;
-        // Dùng try-with-resources cho BufferedReader để chắc chắn file được đóng
         try (BufferedReader br = new BufferedReader(new FileReader(file, StandardCharsets.UTF_8))) {
 
             conn = dbConn.getConnection();
@@ -242,13 +251,13 @@ public class load_to_staging {
             while ((line = br.readLine()) != null) {
                 try {
                     String[] row = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1);
-                    for(int i=0; i<row.length; i++) row[i] = row[i].replaceAll("^\"|\"$", "");
+                    for (int i = 0; i < row.length; i++) row[i] = row[i].replaceAll("^\"|\"$", "");
 
                     String extractBatchId = row[map.get("execution_id")];
                     String source = "WeatherAPI";
 
                     JsonObject json = new JsonObject();
-                    for(String h : map.keySet()) if(map.get(h) < row.length) json.addProperty(h, row[map.get(h)]);
+                    for (String h : map.keySet()) if (map.get(h) < row.length) json.addProperty(h, row[map.get(h)]);
                     json.addProperty("load_execution_id", loadExecId);
                     String jsonStr = gson.toJson(json);
 
@@ -256,7 +265,21 @@ public class load_to_staging {
                     psLoc.setString(1, row[map.get("location_name")]);
                     psLoc.setString(2, row[map.get("region")]);
                     psLoc.setString(3, "Vietnam");
-                    psLoc.setObject(4, null); psLoc.setObject(5, null); psLoc.setObject(6, null);
+                    try {
+                        psLoc.setString(4, row[map.get("lat")]);
+                    } catch (Exception e) {
+                        psLoc.setObject(4, null);
+                    }
+                    try {
+                        psLoc.setString(5, row[map.get("lon")]);
+                    } catch (Exception e) {
+                        psLoc.setObject(5, null);
+                    }
+                    try {
+                        psLoc.setString(6, row[map.get("tz_id")]);
+                    } catch (Exception e) {
+                        psLoc.setObject(6, null);
+                    }
                     psLoc.setString(7, row[map.get("last_updated")]);
                     psLoc.setString(8, source);
                     psLoc.setString(9, extractBatchId);
@@ -286,56 +309,86 @@ public class load_to_staging {
                     psAir.setString(11, jsonStr);
                     psAir.addBatch();
 
-                    // 4. Observation
-                    psObs.setString(1, row[map.get("last_updated")]);
-                    psObs.setString(2, row[map.get("temp_c")]);
-                    psObs.setString(3, row[map.get("temp_f")]);
-                    psObs.setString(4, row[map.get("feels_like_c")]);
-                    psObs.setString(5, row[map.get("feels_like_f")]);
-                    psObs.setString(6, row[map.get("humidity")]);
-                    psObs.setString(7, row[map.get("cloud")]);
-                    psObs.setString(8, row[map.get("vis_km")]);
-                    psObs.setString(9, row[map.get("vis_miles")]);
-                    psObs.setString(10, row[map.get("uv")]);
-                    psObs.setString(11, row[map.get("wind_mph")]);
-                    psObs.setString(12, row[map.get("wind_kph")]);
-                    psObs.setString(13, row[map.get("wind_degree")]);
-                    psObs.setString(14, row[map.get("wind_dir")]);
-                    psObs.setString(15, row[map.get("pressure_mb")]);
-                    psObs.setString(16, row[map.get("pressure_in")]);
-                    psObs.setString(17, row[map.get("precip_mm")]);
-                    psObs.setString(18, row[map.get("precip_in")]);
-                    psObs.setString(19, row[map.get("location_name")]);
-                    psObs.setString(20, source);
-                    psObs.setString(21, extractBatchId);
-                    psObs.setString(22, jsonStr);
+                    // 4. Observation (Đã thêm gust_mph, gust_kph sau uv)
+                    int idx = 1;
+                    psObs.setString(idx++, row[map.get("last_updated")]);
+                    psObs.setString(idx++, row[map.get("temp_c")]);
+                    psObs.setString(idx++, row[map.get("temp_f")]);
+                    psObs.setString(idx++, row[map.get("feels_like_c")]);
+                    psObs.setString(idx++, row[map.get("feels_like_f")]);
+                    psObs.setString(idx++, row[map.get("humidity")]);
+                    psObs.setString(idx++, row[map.get("cloud")]);
+                    psObs.setString(idx++, row[map.get("vis_km")]);
+                    psObs.setString(idx++, row[map.get("vis_miles")]);
+                    psObs.setString(idx++, row[map.get("uv")]);
+
+                    // --- MỚI THÊM ---
+                    psObs.setString(idx++, row[map.get("gust_mph")]);
+                    psObs.setString(idx++, row[map.get("gust_kph")]);
+                    // ----------------
+
+                    psObs.setString(idx++, row[map.get("wind_mph")]);
+                    psObs.setString(idx++, row[map.get("wind_kph")]);
+                    psObs.setString(idx++, row[map.get("wind_degree")]);
+                    psObs.setString(idx++, row[map.get("wind_dir")]);
+                    psObs.setString(idx++, row[map.get("pressure_mb")]);
+                    psObs.setString(idx++, row[map.get("pressure_in")]);
+                    psObs.setString(idx++, row[map.get("precip_mm")]);
+                    psObs.setString(idx++, row[map.get("precip_in")]);
+                    psObs.setString(idx++, row[map.get("location_name")]);
+                    psObs.setString(idx++, source);
+                    psObs.setString(idx++, extractBatchId);
+                    psObs.setString(idx++, jsonStr);
                     psObs.addBatch();
 
                     count++;
                     if (count % 100 == 0) {
-                        psLoc.executeBatch(); psCond.executeBatch(); psAir.executeBatch(); psObs.executeBatch();
+                        psLoc.executeBatch();
+                        psCond.executeBatch();
+                        psAir.executeBatch();
+                        psObs.executeBatch();
                     }
                 } catch (Exception e) {
                     System.err.println("  ⚠️ Skip row: " + e.getMessage());
                 }
             }
 
-            psLoc.executeBatch(); psCond.executeBatch(); psAir.executeBatch(); psObs.executeBatch();
+            psLoc.executeBatch();
+            psCond.executeBatch();
+            psAir.executeBatch();
+            psObs.executeBatch();
             conn.commit();
             System.out.println("✅ Inserted " + count + " rows into RAW tables.");
             return count;
 
         } catch (Exception e) {
-            try { if(conn != null) conn.rollback(); } catch (SQLException ex) {}
+            try {
+                if (conn != null) conn.rollback();
+            } catch (SQLException ex) {
+            }
             updateProcessLogStatus(loadExecId, "failed", 0, 0, e.getMessage());
             throw e;
         } finally {
-            // Đóng các resource DB (File resource đã được đóng tự động bởi try-with-resources)
-            try { if(psLoc != null) psLoc.close(); } catch (SQLException ex) {}
-            try { if(psCond != null) psCond.close(); } catch (SQLException ex) {}
-            try { if(psAir != null) psAir.close(); } catch (SQLException ex) {}
-            try { if(psObs != null) psObs.close(); } catch (SQLException ex) {}
-            try { if(conn != null) conn.close(); } catch (SQLException ex) {}
+            try {
+                if (psLoc != null) psLoc.close();
+            } catch (SQLException ex) {
+            }
+            try {
+                if (psCond != null) psCond.close();
+            } catch (SQLException ex) {
+            }
+            try {
+                if (psAir != null) psAir.close();
+            } catch (SQLException ex) {
+            }
+            try {
+                if (psObs != null) psObs.close();
+            } catch (SQLException ex) {
+            }
+            try {
+                if (conn != null) conn.close();
+            } catch (SQLException ex) {
+            }
         }
     }
 }
