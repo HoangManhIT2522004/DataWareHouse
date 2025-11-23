@@ -23,8 +23,7 @@ public class ExtractWeatherData {
 
     /**
      * ============================================================
-     * Extract weather data - STRICT MODE
-     * If even 1 province fails, the entire extract = FAILED
+     * Step 5: Extract weather to csv file
      * ============================================================
      */
     public static void extractWeatherToFile(

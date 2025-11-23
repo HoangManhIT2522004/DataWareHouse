@@ -126,7 +126,7 @@ public class ExtractToFile {
 
     /**
      * ============================================================
-     * Step 4: Prepare for extract, create/get config and create new log
+     * Step 4: Prepare for extract, load extract config create/get config and create new log
      * ============================================================
      */
     public static ExtractWeatherData.ExtractInfo prepareExtract(LoadConfig c) {
@@ -230,16 +230,14 @@ public class ExtractToFile {
             // Step 2: Connect DB
             controlDB = connectDB(config);
 
-            // Step 3: Check extract today
+            // Step 3: Check extract success today
             checkTodayExtractSuccess();
 
-            // Step 4: Load extract config
+            // Step 4: Prepare extract create config & log (Load extract config)
             LoadConfig extractConfig = loadConfig("config/extract_config.xml");
-
-            // Step 5: Prepare extract (create config & log)
             ExtractWeatherData.ExtractInfo extractInfo = prepareExtract(extractConfig);
 
-            // Step 6: Extract
+            // Step 5: Extract weather to csv file
             ExtractWeatherData.extractWeatherToFile(
                     extractConfig,
                     extractInfo.getExecutionId(),
