@@ -23,7 +23,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 
-public class load_to_staging {
+public class LoadToStaging {
 
     private static DBConn controlDB;
     private static DBConn stagingDB;
@@ -46,7 +46,7 @@ public class load_to_staging {
 
             // 4. Kiểm tra file CSV đầu vào
             String dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-            String csvPath = "data/weatherapi_" + dateStr + ".csv";
+            String csvPath = "D:/DataWareHouse/src/main/java/data/weatherapi_" + dateStr + ".csv";
             File file = new File(csvPath);
 
             if (!file.exists()) {
@@ -144,7 +144,7 @@ public class load_to_staging {
     private static void checkTodayProcessSuccess() {
         try {
             System.out.println("[Check] Checking today's process status...");
-            String sql = "SELECT check_today_process_success('WA_Load_Raw') AS success";
+            String sql = "SELECT check_today_loadstaging_success_prefix('LOD_STG') AS success";
             final boolean[] alreadyLoaded = {false};
 
             controlDB.executeQuery(sql, rs -> {
@@ -166,10 +166,10 @@ public class load_to_staging {
 
     private static String prepareLoadProcess(String csvPath) throws Exception {
         System.out.println("[Prepare] Creating process log entry...");
-        String processName = "WA_Load_Raw_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String processName = "LOD_STG_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
 
         String getConfigSql = String.format(
-                "SELECT get_or_create_config_process('%s', 'load_staging', '%s', 'staging', 'raw_weather_tables')",
+                "SELECT get_or_create_config_loadstaging('%s', 'load_staging', '%s', 'staging', 'raw_weather_tables')",
                 processName, csvPath
         );
 
@@ -180,7 +180,7 @@ public class load_to_staging {
 
         if (configId[0] == 0) throw new Exception("Failed to get/create config_process ID");
 
-        String createLogSql = "SELECT create_new_process_log(" + configId[0] + ")";
+        String createLogSql = "SELECT create_new_loadstaging_log(" + configId[0] + ")";
         final String[] execId = {null};
         controlDB.executeQuery(createLogSql, rs -> {
             if (rs.next()) execId[0] = rs.getString(1);
@@ -193,7 +193,7 @@ public class load_to_staging {
 
     private static void updateProcessLogStatus(String execId, String status, int inserted, int failed, String message) {
         try {
-            String sql = "SELECT update_process_log_status(?, ?::process_status, ?, ?, ?)";
+            String sql = "SELECT update_loadstaging_log_status(?, ?::process_status, ?, ?, ?)";
             controlDB.executeQuery(sql, rs -> {
             }, execId, status, inserted, failed, message);
             System.out.println("[Log] Updated status to: " + status);

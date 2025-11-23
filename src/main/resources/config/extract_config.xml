@@ -28,7 +28,7 @@
          ==================================================================== -->
     <config>
         <configSource>
-            <config_name>ExtractToFile</config_name>
+            <config_name>EXT</config_name>
             <source_type>api</source_type>
             <source_url>https://api.weatherapi.com/v1/current.json?key=4e10d60eb8384de694031201251710&amp;q=Hanoi&amp;aqi=yes</source_url>
             <output_path>D:/DataWareHouse/src/main/java/data/</output_path>

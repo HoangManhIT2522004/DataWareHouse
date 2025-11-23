@@ -231,7 +231,7 @@ public class TransformToStaging {
 
     private static void checkTodayProcessSuccess() {
         try {
-            String sql = "SELECT check_today_process_success('WA_Transform_DW') AS success";
+            String sql = "SELECT check_today_transformstaging_success_prefix('TRF_STG_') AS success";
             final boolean[] alreadyLoaded = {false};
             controlDB.executeQuery(sql, rs -> { if (rs.next()) alreadyLoaded[0] = rs.getBoolean("success"); });
             if (alreadyLoaded[0]) { System.out.println("⚠️ Hôm nay đã Transform thành công. Dừng tiến trình."); System.exit(0); }
@@ -240,12 +240,12 @@ public class TransformToStaging {
 
     private static String prepareTransformProcess() throws Exception {
         System.out.println("[Prepare] Creating process log entry...");
-        String processName = "WA_Transform_DW_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        String getConfigSql = String.format("SELECT get_or_create_config_process('%s', 'transform', 'staging_tables', 'staging', 'warehouse_tables')", processName);
+        String processName = "TRF_STG_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String getConfigSql = String.format("SELECT get_or_create_config_transformstaging('%s', 'transform', 'staging_tables', 'staging', 'warehouse_tables')", processName);
         final int[] configId = {0};
         controlDB.executeQuery(getConfigSql, rs -> { if (rs.next()) configId[0] = rs.getInt(1); });
         if (configId[0] == 0) throw new Exception("Failed to get/create config_process ID");
-        String createLogSql = "SELECT create_new_process_log(" + configId[0] + ")";
+        String createLogSql = "SELECT create_new_transformstaging_log(" + configId[0] + ")";
         final String[] execId = {null};
         controlDB.executeQuery(createLogSql, rs -> { if (rs.next()) execId[0] = rs.getString(1); });
         if (execId[0] == null) throw new Exception("Failed to create log_process entry");
@@ -255,7 +255,7 @@ public class TransformToStaging {
 
     private static void updateProcessLogStatus(String execId, String status, int inserted, int failed, String message) {
         try {
-            String sql = "SELECT update_process_log_status(?, ?::process_status, ?, ?, ?)";
+            String sql = "SELECT update_transformstaging_log_status(?, ?::process_status, ?, ?, ?)";
             controlDB.executeQuery(sql, rs -> {}, execId, status, inserted, failed, message);
             System.out.println("[Log] Updated status to: " + status);
         } catch (Exception e) { System.err.println("❌ Failed update log: " + e.getMessage()); }

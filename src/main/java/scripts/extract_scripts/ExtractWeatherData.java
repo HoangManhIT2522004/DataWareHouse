@@ -255,15 +255,27 @@ public class ExtractWeatherData {
     private static String getCsvHeader() {
         return "execution_id," +
                 "location_name,location_code,region," +
-                "country,lat,lon,tz_id,localtime," +
+                "country,lat,lon,tz_id,localtime_epoch,localtime," +
                 "temp_c,temp_f,feels_like_c,feels_like_f," +
                 "humidity,wind_kph,wind_mph,wind_degree,wind_dir," +
                 "gust_kph,gust_mph," +
                 "pressure_mb,pressure_in,precip_mm,precip_in," +
                 "cloud,uv,vis_km,vis_miles," +
-                "condition_text,condition_code," +
+                "is_day," +
+                "condition_text,condition_icon,condition_code," +  // icon ở đây
                 "aqi_us,aqi_gb,pm2_5,pm10,co,no2,o3,so2," +
                 "last_updated,extract_time";
+    }
+
+    /**
+     * Get full icon URL with https protocol
+     */
+    private static String getFullIconUrl(JsonObject condition) {
+        String icon = condition.get("icon").getAsString();
+        if (icon.startsWith("//")) {
+            return "https:" + icon;
+        }
+        return icon;
     }
 
     /**
@@ -279,13 +291,14 @@ public class ExtractWeatherData {
         String extractTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 
         return String.format("%s,%s,%s,%s," +
-                        "%s,%.4f,%.4f,%s,%s," +
+                        "%s,%.4f,%.4f,%s,%d,%s," +
                         "%.1f,%.1f,%.1f,%.1f," +
                         "%d,%.1f,%.1f,%d,%s," +
                         "%.1f,%.1f," +
                         "%.1f,%.2f,%.1f,%.2f," +
                         "%d,%.1f,%.1f,%.1f," +
-                        "\"%s\",%d," +
+                        "%d," +
+                        "\"%s\",\"%s\",%d," +  // text, icon URL, code
                         "%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f," +
                         "%s,%s",
                 executionId,
@@ -296,6 +309,7 @@ public class ExtractWeatherData {
                 locationObj.get("lat").getAsDouble(),
                 locationObj.get("lon").getAsDouble(),
                 locationObj.get("tz_id").getAsString(),
+                locationObj.get("localtime_epoch").getAsLong(),
                 locationObj.get("localtime").getAsString(),
                 current.get("temp_c").getAsDouble(),
                 current.get("temp_f").getAsDouble(),
@@ -316,7 +330,9 @@ public class ExtractWeatherData {
                 current.get("uv").getAsDouble(),
                 current.get("vis_km").getAsDouble(),
                 current.get("vis_miles").getAsDouble(),
+                current.get("is_day").getAsInt(),
                 condition.get("text").getAsString(),
+                getFullIconUrl(condition),  // ← Dùng helper method
                 condition.get("code").getAsInt(),
                 airQuality.get("us-epa-index").getAsInt(),
                 airQuality.get("gb-defra-index").getAsInt(),
