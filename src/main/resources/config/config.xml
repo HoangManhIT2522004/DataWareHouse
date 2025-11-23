@@ -8,7 +8,7 @@
             <port>5432</port>
             <name>control</name>
             <username>postgres</username>
-            <password>123123</password>
+            <password></password>
             <url>jdbc:postgresql://localhost:5432/control</url>
         </control>
 
@@ -51,7 +51,7 @@
         </smtp>
         <from>
             <address>manhhoang2522004it@gmail.com</address>
-            <password>sbjecjoixsixmbso</password>
+            <password></password>
             <name>Weather ETL System</name>
         </from>
         <to>
