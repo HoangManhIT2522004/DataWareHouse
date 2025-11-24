@@ -38,11 +38,11 @@ public class TransformToStaging {
             int totalRows = transformData(execId);
 
             updateProcessLogStatus(execId, "success", totalRows, 0, "Transform Success");
-            System.out.println("\n✅ TRANSFORM COMPLETED SUCCESSFULLY");
+            System.out.println("\n TRANSFORM COMPLETED SUCCESSFULLY");
             System.exit(0);
 
         } catch (Exception e) {
-            System.err.println("\n❌ TRANSFORM FAILED");
+            System.err.println("\n TRANSFORM FAILED");
             e.printStackTrace();
             if (execId != null) updateProcessLogStatus(execId, "failed", 0, 0, e.getMessage());
             EmailSender.sendError("ETL Error: Transform Failed", e.getMessage(), e);
@@ -89,7 +89,7 @@ public class TransformToStaging {
                             "   observation_id, location_id, condition_id, observation_date, observation_time, last_updated_epoch, " +
                             "   is_day, " +
                             "   temp_c, feelslike_c, pressure_mb, precip_mm, humidity_pct, cloud_pct, uv_index, " +
-                            "   vis_km, wind_kph, gust_kph, temp_f, feelslike_f, pressure_in, precip_in, vis_miles, wind_mph, gust_mph, wind_deg, wind_dir, " +
+                            "   vis_km, wind_kph, gust_kph, wind_deg, wind_dir, " + // Đã loại bỏ các cột Imperial
                             "   record_status, hash_key, source_system, batch_id" +
                             ") " +
                             "SELECT DISTINCT ON (r.location_name, r.last_updated) " +
@@ -102,8 +102,6 @@ public class TransformToStaging {
                             "   CAST(r.temp_c AS float8), CAST(r.feelslike_c AS float8), CAST(r.pressure_mb AS float8), CAST(r.precip_mm AS float8), " +
                             "   CAST(r.humidity AS int2), CAST(r.cloud AS int2), CAST(r.uv AS float8), " +
                             "   CAST(r.vis_km AS float8), CAST(r.wind_kph AS float8), CAST(r.gust_kph AS float8), " +
-                            "   CAST(r.temp_f AS float8), CAST(r.feelslike_f AS float8), CAST(r.pressure_in AS float8), CAST(r.precip_in AS float8), " +
-                            "   CAST(r.vis_miles AS float8), CAST(r.wind_mph AS float8), CAST(r.gust_mph AS float8), " +
                             "   CAST(r.wind_degree AS int4), r.wind_dir, " +
                             "   'pending', " +
                             "   MD5(CONCAT(r.temp_c, r.humidity, r.precip_mm, r.uv, r.wind_kph, r.pressure_mb, r.vis_km, r.is_day)), " +
@@ -153,14 +151,14 @@ public class TransformToStaging {
                             "   location_sk, condition_sk, date_sk, observation_date, observation_time, " +
                             "   last_updated_epoch, is_day, " +
                             "   temp_c, humidity_pct, precip_mm, uv_index, " +
-                            "   vis_km, wind_kph, gust_kph, temp_f, feelslike_f, pressure_in, precip_in, vis_miles, wind_mph, gust_mph, wind_deg, wind_dir, " +
+                            "   vis_km, wind_kph, gust_kph, wind_deg, wind_dir, " + // Đã loại bỏ các cột Imperial
                             "   feelslike_c, pressure_mb, cloud_pct, batch_id, " +
                             "   source_system, loaded_at" +
                             ") " +
                             "SELECT dl.location_sk, dwc.condition_sk, dd.date_sk, s.observation_date, s.observation_time, " +
                             "   s.last_updated_epoch, s.is_day, " +
                             "   s.temp_c, s.humidity_pct, s.precip_mm, s.uv_index, " +
-                            "   s.vis_km, s.wind_kph, s.gust_kph, s.temp_f, s.feelslike_f, s.pressure_in, s.precip_in, s.vis_miles, s.wind_mph, s.gust_mph, s.wind_deg, s.wind_dir, " +
+                            "   s.vis_km, s.wind_kph, s.gust_kph, s.wind_deg, s.wind_dir, " + // Đã loại bỏ các SELECT cột Imperial
                             "   s.feelslike_c, s.pressure_mb, s.cloud_pct, s.batch_id, " +
                             "   s.source_system, CURRENT_TIMESTAMP " +
                             "FROM stg_weather_observation s " +
@@ -241,8 +239,8 @@ public class TransformToStaging {
             String sql = "SELECT check_today_transformstaging_success_prefix('TRF_STG_') AS success";
             final boolean[] alreadyLoaded = {false};
             controlDB.executeQuery(sql, rs -> { if (rs.next()) alreadyLoaded[0] = rs.getBoolean("success"); });
-            if (alreadyLoaded[0]) { System.out.println("⚠️ Hôm nay đã Transform thành công. Dừng tiến trình."); System.exit(0); }
-        } catch (Exception e) { System.err.println("⚠️ Warning Check Log: " + e.getMessage()); }
+            if (alreadyLoaded[0]) { System.out.println(" Hôm nay đã Transform thành công. Dừng tiến trình."); System.exit(0); }
+        } catch (Exception e) { System.err.println("  Warning Check Log: " + e.getMessage()); }
     }
 
     private static String prepareTransformProcess() throws Exception {
@@ -265,6 +263,6 @@ public class TransformToStaging {
             String sql = "SELECT update_transformstaging_log_status(?, ?::process_status, ?, ?, ?)";
             controlDB.executeQuery(sql, rs -> {}, execId, status, inserted, failed, message);
             System.out.println("[Log] Updated status to: " + status);
-        } catch (Exception e) { System.err.println("❌ Failed update log: " + e.getMessage()); }
+        } catch (Exception e) { System.err.println(" Failed update log: " + e.getMessage()); }
     }
 }
