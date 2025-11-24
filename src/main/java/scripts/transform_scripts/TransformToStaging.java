@@ -103,44 +103,66 @@ public class TransformToStaging {
                             "FROM raw_weather_condition r " +
                             "ORDER BY r.code, r.batch_id DESC");
 
-            // 1.3 Observation
+            // 1.3 Observation - BỔ SUNG ĐẦY ĐỦ TRƯỜNG
             totalUpdated += executeSQL(conn, "Staging Observation",
                     "TRUNCATE TABLE stg_weather_observation",
                     "INSERT INTO stg_weather_observation (" +
                             "   observation_id, location_id, condition_id, observation_date, observation_time, " +
                             "   is_day, " +
-                            "   temp_c, feelslike_c, pressure_mb, precip_mm, humidity_pct, cloud_pct, uv_index, " +
-                            "   vis_km, wind_kph, gust_kph, wind_deg, wind_dir, " +
+                            "   temp_c, temp_f, feelslike_c, feelslike_f, " +
+                            "   pressure_mb, pressure_in, precip_mm, precip_in, " +
+                            "   humidity_pct, cloud_pct, uv_index, " +
+                            "   vis_km, vis_miles, " +
+                            "   wind_kph, wind_mph, gust_kph, gust_mph, wind_deg, wind_dir, " +
                             "   record_status, hash_key, source_system, batch_id" +
                             ") " +
                             "SELECT DISTINCT ON (r.location_name, r.last_updated) " +
                             "   MD5(CONCAT(r.location_name, r.last_updated)), r.location_name, " +
                             "   (r.raw_payload->>'condition_code'), " +
 
+                            // Date & Time
                             "   CASE WHEN LENGTH(TRIM(r.last_updated)) < 10 THEN CAST('1900-01-01' AS date) ELSE CAST(r.last_updated AS date) END, " +
                             "   CASE WHEN LENGTH(TRIM(r.last_updated)) < 10 THEN CAST('1900-01-01 00:00:00' AS timestamp) ELSE CAST(r.last_updated AS timestamp) END, " +
 
+                            // is_day
                             "   CASE WHEN r.is_day IN ('0', '1') THEN CAST(r.is_day AS boolean) ELSE NULL END, " +
 
+                            // Temperature (C & F)
                             "   CAST(CASE WHEN r.temp_c ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.temp_c ELSE NULL END AS float8), " +
+                            "   CAST(CASE WHEN r.temp_f ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.temp_f ELSE NULL END AS float8), " +
                             "   CAST(CASE WHEN r.feelslike_c ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.feelslike_c ELSE NULL END AS float8), " +
-                            "   CAST(CASE WHEN r.pressure_mb ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.pressure_mb ELSE NULL END AS float8), " +
-                            "   CAST(CASE WHEN r.precip_mm ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.precip_mm ELSE NULL END AS float8), " +
+                            "   CAST(CASE WHEN r.feelslike_f ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.feelslike_f ELSE NULL END AS float8), " +
 
+                            // Pressure (mb & in)
+                            "   CAST(CASE WHEN r.pressure_mb ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.pressure_mb ELSE NULL END AS float8), " +
+                            "   CAST(CASE WHEN r.pressure_in ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.pressure_in ELSE NULL END AS float8), " +
+
+                            // Precipitation (mm & in)
+                            "   CAST(CASE WHEN r.precip_mm ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.precip_mm ELSE NULL END AS float8), " +
+                            "   CAST(CASE WHEN r.precip_in ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.precip_in ELSE NULL END AS float8), " +
+
+                            // Humidity & Cloud
                             "   CAST(NULLIF(r.humidity, '') AS int2), " +
                             "   CAST(NULLIF(r.cloud, '') AS int2), " +
 
+                            // UV
                             "   CAST(CASE WHEN r.uv ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.uv ELSE NULL END AS float8), " +
 
+                            // Visibility (km & miles)
                             "   CAST(CASE WHEN r.vis_km ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.vis_km ELSE NULL END AS float8), " +
+                            "   CAST(CASE WHEN r.vis_miles ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.vis_miles ELSE NULL END AS float8), " +
 
+                            // Wind (kph, mph, gust)
                             "   CAST(CASE WHEN r.wind_kph ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.wind_kph ELSE NULL END AS float8), " +
+                            "   CAST(CASE WHEN r.wind_mph ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.wind_mph ELSE NULL END AS float8), " +
                             "   CAST(CASE WHEN r.gust_kph ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.gust_kph ELSE NULL END AS float8), " +
+                            "   CAST(CASE WHEN r.gust_mph ~ '^[-+]?[0-9]*\\.?[0-9]+$' THEN r.gust_mph ELSE NULL END AS float8), " +
 
+                            // Wind direction
                             "   CAST(CASE WHEN r.wind_degree ~ '^[-+]?[0-9]+$' THEN r.wind_degree ELSE NULL END AS int4), " +
-
                             "   r.wind_dir, " +
 
+                            // Metadata
                             "   'pending', " +
                             "   MD5(CONCAT(r.temp_c, r.humidity, r.precip_mm, r.uv, r.wind_kph, r.pressure_mb, r.vis_km, r.is_day)), " +
                             "   r.source_system, r.batch_id " +

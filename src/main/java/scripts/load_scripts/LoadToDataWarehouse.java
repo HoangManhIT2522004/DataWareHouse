@@ -19,136 +19,320 @@ public class LoadToDataWarehouse {
     private static final DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter dtf_date = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    public static void main(String[] args) {
-        System.out.println("========================================");
-        System.out.println("   WEATHER ETL - STEP 4: LOAD TO WAREHOUSE");
-        System.out.println("========================================\n");
+    // ✅ STATIC BLOCK FOR DEBUG
+    static {
+        System.out.println("=== LoadToDataWarehouse CLASS LOADED ===");
+        System.out.println("Java Version: " + System.getProperty("java.version"));
+        System.out.println("Working Directory: " + System.getProperty("user.dir"));
+        System.out.println("Classpath: " + System.getProperty("java.class.path"));
+    }
 
+    /**
+     * ============================================================
+     * Step 1: Load configuration from XML file
+     * ============================================================
+     */
+    public static LoadConfig loadConfig(String path) {
+        System.out.println("[Step 1] Loading configuration...");
         try {
-            // 1. Load config
-            LoadConfig config = new LoadConfig("config/config.xml");
-            controlDB   = connectControlDB(config);
-            stagingDB   = connectStagingDB(config);
-            warehouseDB = connectWarehouseDB(config);
+            LoadConfig config = new LoadConfig(path);
+            System.out.println("[Step 1] Config loaded from: " + path);
+            return config;
+        } catch (Exception e) {
+            String subject = "ERROR: Load Configuration Failed";
+            String body = "Unable to load configuration file from path: " + path +
+                    "\n\nPlease verify:\n" +
+                    "- Does the file exist?\n" +
+                    "- Is the path correct?\n" +
+                    "- Does the file have read permissions?\n" +
+                    "- Is the XML structure valid?";
+            EmailSender.sendError(subject, body, e);
+            System.err.println("[Step 1] FAILED: Cannot load config file");
+            e.printStackTrace();
+            System.exit(1);
+            return null;
+        }
+    }
 
-            // 2. Idempotent check
-            checkTodayWarehouseLoadSuccess();
+    /**
+     * ============================================================
+     * Step 2: Connect to Control Database
+     * ============================================================
+     */
+    public static DBConn connectControlDB(LoadConfig config) {
+        System.out.println("[Step 2] Connecting to Control database...");
+        try {
+            Element database = LoadConfig.getElement(config.getXmlDoc(), "database");
+            Element control = LoadConfig.getChildElement(database, "control");
 
-            // 3. Tạo execution log
-            executionId = prepareWarehouseLoadProcess();
+            System.out.println("[DEBUG] Database element: " + (database != null ? "Found" : "NULL"));
+            System.out.println("[DEBUG] Control element: " + (control != null ? "Found" : "NULL"));
 
-            // 4. Load dữ liệu (Đã sửa thành Incremental Load)
-            int total = loadToWarehouse(executionId);
+            String url = LoadConfig.getValue(control, "url");
+            String username = LoadConfig.getValue(control, "username");
+            String password = LoadConfig.getValue(control, "password");
 
-            // 5. Cập nhật log
-            updateProcessLogStatus(executionId, "success", total, 0,
-                    "Load to Data Warehouse successfully");
+            System.out.println("[DEBUG] URL: " + url);
+            System.out.println("[DEBUG] Username: " + username);
+            System.out.println("[DEBUG] Password: " + (password.isEmpty() ? "EMPTY!" : "***"));
 
-            System.out.println("\nTổng bản ghi đã load: " + total);
-            // 6. Gửi email báo thành công
-            sendSuccessEmail(total);
+            DBConn db = new DBConn(url, username, password);
 
-            System.out.println("\nLOAD TO DATA WAREHOUSE COMPLETED SUCCESSFULLY");
-            System.exit(0);
+            // Test connection
+            db.executeQuery("SELECT 1", rs -> {
+                if (rs.next()) {
+                    System.out.println("[Step 2] Control database connection successful");
+                }
+            });
+
+            return db;
 
         } catch (Exception e) {
-            System.err.println("\nLOAD TO DATA WAREHOUSE FAILED");
+            String subject = "ERROR: Control Database Connection Failed";
+            String body = "Unable to connect to Control database.\n\n" +
+                    "Please verify:\n" +
+                    "- Is the database server running?\n" +
+                    "- Are the connection details correct?\n" +
+                    "- Is the network connection available?";
+            EmailSender.sendError(subject, body, e);
+            System.err.println("[Step 2] FAILED: Cannot connect to Control database");
             e.printStackTrace();
+            System.exit(1);
+            return null;
+        }
+    }
 
-            if (executionId != null)
-                updateProcessLogStatus(executionId, "failed", 0, 0, e.getMessage());
+    /**
+     * ============================================================
+     * Step 3: Connect to Staging Database
+     * ============================================================
+     */
+    public static DBConn connectStagingDB(LoadConfig config) {
+        System.out.println("[Step 3] Connecting to Staging database...");
+        try {
+            Element database = LoadConfig.getElement(config.getXmlDoc(), "database");
+            Element staging = LoadConfig.getChildElement(database, "staging");
 
-            sendErrorEmail(e);
+            System.out.println("[DEBUG] Staging element: " + (staging != null ? "Found" : "NULL"));
+
+            String url = LoadConfig.getValue(staging, "url");
+            String username = LoadConfig.getValue(staging, "username");
+            String password = LoadConfig.getValue(staging, "password");
+
+            System.out.println("[DEBUG] URL: " + url);
+            System.out.println("[DEBUG] Username: " + username);
+            System.out.println("[DEBUG] Password: " + (password.isEmpty() ? "EMPTY!" : "***"));
+
+            DBConn db = new DBConn(url, username, password);
+
+            // Test connection
+            db.executeQuery("SELECT 1", rs -> {
+                if (rs.next()) {
+                    System.out.println("[Step 3] Staging database connection successful");
+                }
+            });
+
+            return db;
+
+        } catch (Exception e) {
+            String subject = "ERROR: Staging Database Connection Failed";
+            String body = "Unable to connect to Staging database.\n\n" +
+                    "Please verify:\n" +
+                    "- Is the database server running?\n" +
+                    "- Are the connection details correct?\n" +
+                    "- Is the network connection available?";
+            EmailSender.sendError(subject, body, e);
+            System.err.println("[Step 3] FAILED: Cannot connect to Staging database");
+            e.printStackTrace();
+            System.exit(1);
+            return null;
+        }
+    }
+
+    /**
+     * ============================================================
+     * Step 4: Connect to Warehouse Database
+     * ============================================================
+     */
+    public static DBConn connectWarehouseDB(LoadConfig config) {
+        System.out.println("[Step 4] Connecting to Warehouse database...");
+        try {
+            Element database = LoadConfig.getElement(config.getXmlDoc(), "database");
+            Element warehouse = LoadConfig.getChildElement(database, "warehouse");
+
+            System.out.println("[DEBUG] Warehouse element: " + (warehouse != null ? "Found" : "NULL"));
+
+            String url = LoadConfig.getValue(warehouse, "url");
+            String username = LoadConfig.getValue(warehouse, "username");
+            String password = LoadConfig.getValue(warehouse, "password");
+
+            System.out.println("[DEBUG] URL: " + url);
+            System.out.println("[DEBUG] Username: " + username);
+            System.out.println("[DEBUG] Password: " + (password.isEmpty() ? "EMPTY!" : "***"));
+
+            DBConn db = new DBConn(url, username, password);
+
+            // Test connection
+            db.executeQuery("SELECT 1", rs -> {
+                if (rs.next()) {
+                    System.out.println("[Step 4] Warehouse database connection successful");
+                }
+            });
+
+            return db;
+
+        } catch (Exception e) {
+            String subject = "ERROR: Warehouse Database Connection Failed";
+            String body = "Unable to connect to Warehouse database.\n\n" +
+                    "Please verify:\n" +
+                    "- Is the database server running?\n" +
+                    "- Are the connection details correct?\n" +
+                    "- Is the network connection available?";
+            EmailSender.sendError(subject, body, e);
+            System.err.println("[Step 4] FAILED: Cannot connect to Warehouse database");
+            e.printStackTrace();
+            System.exit(1);
+            return null;
+        }
+    }
+
+    /**
+     * ============================================================
+     * Step 5: Check if today's warehouse load already succeeded
+     * ============================================================
+     */
+    public static void checkTodayWarehouseLoadSuccess() {
+        try {
+            System.out.println("[Step 5] Checking today's warehouse load status...");
+            String sql = "SELECT check_today_success_loadwarehouse(?) AS success";
+            final boolean[] alreadyDone = {false};
+
+            controlDB.executeQuery(sql, rs -> {
+                if (rs.next()) {
+                    alreadyDone[0] = rs.getBoolean("success");
+                }
+            }, "LOD_DW");
+
+            if (alreadyDone[0]) {
+                String subject = "Weather ETL - Warehouse Load Already Completed Today";
+                String body = "The system detected that warehouse load has already been completed successfully today.\n\n" +
+                        "Time: " + LocalDateTime.now().format(dtf) +
+                        "\n\nStopping process to avoid duplicates.";
+                EmailSender.sendEmail(subject, body);
+                System.out.println("[Step 5] Warehouse load already completed today, stopping process.");
+                System.exit(0);
+            } else {
+                System.out.println("[Step 5] No warehouse load success found today, proceeding...");
+            }
+
+        } catch (Exception e) {
+            String subject = "ERROR: Check Today Warehouse Load Failed";
+            String body = "Error occurred while checking today's warehouse load status";
+            EmailSender.sendError(subject, body, e);
+            System.err.println("[Step 5] FAILED: Error checking today's warehouse load");
+            e.printStackTrace();
             System.exit(1);
         }
     }
 
-    // ========================================================================
-    // (1) CHECK TODAY & (2) LOG PROCESS - ĐÃ SỬA
-    // ========================================================================
-    private static void checkTodayWarehouseLoadSuccess() throws Exception {
-        System.out.println("[Check] Kiểm tra xem hôm nay đã Load Warehouse chưa...");
-        String sql = "SELECT check_today_success_loadwarehouse(?) AS success";
-        final boolean[] alreadyDone = {false};
+    /**
+     * ============================================================
+     * Step 6: Prepare warehouse load process
+     * ============================================================
+     */
+    public static String prepareWarehouseLoadProcess() {
+        try {
+            System.out.println("[Step 6] Preparing warehouse load process...");
 
-        // SỬA ĐỔI: Sử dụng "LOD_DW" làm tiền tố.
-        // Hàm PL/pgSQL sử dụng LIKE 'LOD_DW' || '%' để khớp với 'LOD_DW_YYYYMMDD'
-        controlDB.executeQuery(sql, rs -> {
-            if (rs.next()) alreadyDone[0] = rs.getBoolean("success");
-        }, "LOD_DW"); // <<< Đã sửa thành "LOD_DW" (Bỏ dấu gạch dưới cuối)
+            String processName = "LOD_DW_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
 
-        if (alreadyDone[0]) {
-            String msg = "Hôm nay đã chạy Load to Data Warehouse thành công rồi. Dừng tiến trình để tránh duplicate.";
-            System.out.println(msg);
-            EmailSender.sendEmail("ETL Notification: Load Warehouse Already Done Today", msg);
-            System.exit(0);
-        } else {
-            System.out.println("Chưa chạy Load Warehouse hôm nay. Tiếp tục...");
+            System.out.println("[Step 6] Process info:");
+            System.out.println("  - Process Name  : " + processName);
+            System.out.println("  - Process Type  : load_warehouse");
+            System.out.println("  - Source        : staging_to_warehouse");
+            System.out.println("  - Destination   : warehouse");
+            System.out.println("  - Description   : dim_and_fact_tables");
+
+            // Step 1: Get or create config_process
+            String sqlConfig = String.format(
+                    "SELECT get_or_create_process_loadwarehouse('%s', 'load_warehouse', 'staging_to_warehouse', 'warehouse', 'dim_and_fact_tables')",
+                    processName
+            );
+
+            final int[] configId = {0};
+            controlDB.executeQuery(sqlConfig, rs -> {
+                if (rs.next()) {
+                    configId[0] = rs.getInt(1);
+                }
+            });
+
+            if (configId[0] == 0) {
+                throw new Exception("Cannot get or create config_process");
+            }
+
+            System.out.println("[Step 6] Config Process ID: " + configId[0]);
+
+            // Step 2: Create execution log
+            String sqlLog = "SELECT create_new_log_loadwarehouse(" + configId[0] + ")";
+            final String[] execId = {null};
+            controlDB.executeQuery(sqlLog, rs -> {
+                if (rs.next()) {
+                    execId[0] = rs.getString(1);
+                }
+            });
+
+            if (execId[0] == null) {
+                throw new Exception("Cannot create execution log");
+            }
+
+            System.out.println("[Step 6] Created execution: " + execId[0]);
+            return execId[0];
+
+        } catch (Exception e) {
+            String subject = "ERROR: Prepare Warehouse Load Failed";
+            String body = "Error occurred while preparing warehouse load process";
+            EmailSender.sendError(subject, body, e);
+            System.err.println("[Step 6] FAILED: Cannot prepare warehouse load");
+            e.printStackTrace();
+            System.exit(1);
+            return null;
         }
     }
 
-    private static String prepareWarehouseLoadProcess() throws Exception {
-        System.out.println("[Log] Tạo log process cho Load Warehouse...");
-
-        // Tiền tố LOD_DW đã được sửa ở bước trước
-        String processName = "LOD_DW_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-
-        // Tạo hoặc lấy config_process
-        // SỬA ĐỔI: Thay 'datawarehouse' bằng 'warehouse' trong tham số thứ 4
-        String sqlConfig = String.format(
-                "SELECT get_or_create_process_loadwarehouse('%s', 'load_warehouse', 'staging_to_warehouse', 'warehouse', 'dim_and_fact_tables')",
-                processName
-        );
-
-        final int[] configId = {0};
-        controlDB.executeQuery(sqlConfig, rs -> {
-            if (rs.next()) configId[0] = rs.getInt(1);
-        });
-        if (configId[0] == 0) throw new Exception("Không tạo được config_process");
-
-        // Tạo execution log
-        String sqlLog = "SELECT create_new_log_loadwarehouse(" + configId[0] + ")";
-        final String[] execId = {null};
-        controlDB.executeQuery(sqlLog, rs -> {
-            if (rs.next()) execId[0] = rs.getString(1);
-        });
-
-        if (execId[0] == null) throw new Exception("Không tạo được execution log");
-
-        System.out.println("Execution ID: " + execId[0]);
-        return execId[0];
-    }
-
+    /**
+     * ============================================================
+     * Update process log status
+     * ============================================================
+     */
     private static void updateProcessLogStatus(String execId, String status, int inserted, int failed, String message) {
         try {
-            // SỬA: Thay thế 'update_process_log_status' bằng 'update_log_status_loadwarehouse'
             String sql = "SELECT update_log_status_loadwarehouse(?, ?::process_status, ?, ?, ?)";
-            // Lưu ý: Hàm update_log_status_loadwarehouse trả về VOID, nhưng ta vẫn dùng executeQuery
-            // với ResultSetHandler rỗng.
             controlDB.executeQuery(sql, rs -> {}, execId, status, inserted, failed, message);
-            System.out.println("[Log] Đã cập nhật trạng thái: " + status);
+            System.out.println("[Log] Status updated: " + status);
         } catch (Exception e) {
-            System.err.println("Không cập nhật được log: " + e.getMessage());
+            System.err.println("Cannot update log: " + e.getMessage());
         }
     }
 
-    // ========================================================================
-    // CÁC HÀM KHÁC - GIỮ NGUYÊN
-    // ========================================================================
+    /**
+     * ============================================================
+     * Send success email
+     * ============================================================
+     */
     private static void sendSuccessEmail(int total) {
-        String subject = "Weather ETL - LOAD TO DATA WAREHOUSE THÀNH CÔNG";
+        String subject = "Weather ETL - LOAD TO DATA WAREHOUSE SUCCESSFUL";
 
         String body = """
                 ======================================
                    WEATHER ETL - LOAD TO WAREHOUSE
-                          THÀNH CÔNG
+                          SUCCESSFUL
                 ======================================
 
                 Execution ID : %s
-                Thời gian    : %s
-                Tổng bản ghi : %,d records
+                Time         : %s
+                Total Records: %,d records
 
-                Hệ thống hoạt động ổn định.
+                System is running smoothly.
                 """.formatted(
                 executionId,
                 LocalDateTime.now().format(dtf),
@@ -156,25 +340,30 @@ public class LoadToDataWarehouse {
         );
 
         EmailSender.sendEmail(subject, body);
-        System.out.println("[Email] Đã gửi email thành công!");
+        System.out.println("[Email] Success email sent!");
     }
 
+    /**
+     * ============================================================
+     * Send error email
+     * ============================================================
+     */
     private static void sendErrorEmail(Exception e) {
-        String subject = "Weather ETL - LOAD TO WAREHOUSE THẤT BẠI";
+        String subject = "Weather ETL - LOAD TO WAREHOUSE FAILED";
 
         String body = """
                 ======================================
                    WEATHER ETL - LOAD TO WAREHOUSE
-                              THẤT BẠI
+                              FAILED
                 ======================================
 
                 Execution ID : %s
-                Thời gian    : %s
+                Time         : %s
 
-                Lỗi:
+                Error:
                 %s
 
-                Cần kiểm tra ngay.
+                Immediate attention required.
                 """
                 .formatted(
                         executionId != null ? executionId : "N/A",
@@ -183,12 +372,16 @@ public class LoadToDataWarehouse {
                 );
 
         EmailSender.sendError(subject, body, e);
-        System.out.println("[Email] Đã gửi email báo lỗi!");
+        System.out.println("[Email] Error email sent!");
     }
 
-
+    /**
+     * ============================================================
+     * Step 7: Load data to warehouse
+     * ============================================================
+     */
     private static int loadToWarehouse(String execId) throws Exception {
-        System.out.println("[Process] Starting Load to Warehouse ...");
+        System.out.println("[Step 7] Starting Load to Warehouse...");
         int total = 0;
 
         try (Connection connStaging = stagingDB.getConnection();
@@ -200,15 +393,21 @@ public class LoadToDataWarehouse {
             total += loadDimensionIncremental(connWarehouse, connStaging, "dim_location", "location_id");
             total += loadDimensionIncremental(connWarehouse, connStaging, "dim_weather_condition", "condition_id");
 
-            // 2. FACT TABLES: Load chỉ dữ liệu hôm nay (Incremental/Daily Refresh)
+            // 2. FACT TABLES: Load today's data only (Incremental/Daily Refresh)
             total += loadFactDailyIncremental(connWarehouse, connStaging, "fact_weather_daily", "observation_date");
             total += loadFactDailyIncremental(connWarehouse, connStaging, "fact_air_quality_daily", "observation_time");
 
             connWarehouse.commit();
+            System.out.println("[Step 7] Warehouse load completed. Total records: " + total);
         }
         return total;
     }
 
+    /**
+     * ============================================================
+     * Load fact table with daily incremental strategy
+     * ============================================================
+     */
     private static int loadFactDailyIncremental(Connection warehouse, Connection staging,
                                                 String tableName, String dateColumnName) throws SQLException {
 
@@ -224,7 +423,7 @@ public class LoadToDataWarehouse {
             whereClause = String.format("%s = CAST(? AS DATE)", dateColumnName);
         }
 
-        // B1. XÓA dữ liệu ngày hôm nay trong Warehouse (để xử lý re-run)
+        // Delete today's data in warehouse (to handle re-run)
         try (Statement delStmt = warehouse.createStatement()) {
             String castedDate = "'" + todayDate + "'::DATE";
             String deleteSql;
@@ -235,7 +434,6 @@ public class LoadToDataWarehouse {
             }
 
             int deletedRows = delStmt.executeUpdate(deleteSql);
-
         }
 
         String columns = getColumnList(staging, tableName);
@@ -266,11 +464,15 @@ public class LoadToDataWarehouse {
             }
         }
 
-        // Kết thúc dòng in bằng tổng số bản ghi
         System.out.println(totalRows + " rows.");
         return totalRows;
     }
 
+    /**
+     * ============================================================
+     * Load dimension table with incremental strategy
+     * ============================================================
+     */
     private static int loadDimensionIncremental(Connection warehouse, Connection staging,
                                                 String tableName, String pkColumnName) throws SQLException {
 
@@ -307,9 +509,11 @@ public class LoadToDataWarehouse {
         return totalRows;
     }
 
-    // ========================================================================
-    // HÀM PHỤ TRỢ: Get Column List - GIỮ NGUYÊN
-    // ========================================================================
+    /**
+     * ============================================================
+     * Get column list from table
+     * ============================================================
+     */
     private static String getColumnList(Connection conn, String tableName) throws SQLException {
         String sql =
                 "SELECT string_agg('\"' || column_name || '\"', ',') " +
@@ -327,35 +531,88 @@ public class LoadToDataWarehouse {
         throw new SQLException("Cannot get columns for table: " + tableName);
     }
 
-    // ========================================================================
-    // (5) CONNECT DB - GIỮ NGUYÊN
-    // ========================================================================
-    private static DBConn connectWarehouseDB(LoadConfig config) throws Exception {
-        Element database = LoadConfig.getElement(config.getXmlDoc(), "database");
-        Element warehouse = LoadConfig.getChildElement(database, "warehouse");
-        return new DBConn(
-                LoadConfig.getValue(warehouse, "url"),
-                LoadConfig.getValue(warehouse, "username"),
-                LoadConfig.getValue(warehouse, "password")
-        );
+    /**
+     * ============================================================
+     * Print usage instructions
+     * ============================================================
+     */
+    private static void printUsage() {
+        System.out.println("Usage: java LoadToDataWarehouse <config_path>");
+        System.out.println();
+        System.out.println("Arguments:");
+        System.out.println("  config_path : Path to configuration file (e.g., config/config.xml)");
+        System.out.println();
+        System.out.println("Example:");
+        System.out.println("  java LoadToDataWarehouse config/config.xml");
     }
 
-    private static DBConn connectControlDB(LoadConfig config) throws Exception {
-        Element control = LoadConfig.getElement(config.getXmlDoc(), "control");
-        return new DBConn(
-                LoadConfig.getValue(control, "url"),
-                LoadConfig.getValue(control, "username"),
-                LoadConfig.getValue(control, "password")
-        );
-    }
+    /**
+     * ============================================================
+     * MAIN METHOD
+     * ============================================================
+     */
+    public static void main(String[] args) {
+        System.out.println("========================================");
+        System.out.println("   WEATHER ETL - STEP 4: LOAD TO WAREHOUSE");
+        System.out.println("========================================\n");
 
-    private static DBConn connectStagingDB(LoadConfig config) throws Exception {
-        Element database = LoadConfig.getElement(config.getXmlDoc(), "database");
-        Element staging = LoadConfig.getChildElement(database, "staging");
-        return new DBConn(
-                LoadConfig.getValue(staging, "url"),
-                LoadConfig.getValue(staging, "username"),
-                LoadConfig.getValue(staging, "password")
-        );
+        // Check arguments
+        if (args.length < 1) {
+            System.err.println("ERROR: Missing required arguments!");
+            System.err.println();
+            printUsage();
+            System.exit(1);
+        }
+
+        String configPath = args[0];
+
+        System.out.println("Configuration:");
+        System.out.println("  - Config File : " + configPath);
+        System.out.println();
+
+        try {
+            // Step 1: Load config
+            LoadConfig config = loadConfig(configPath);
+
+            // Step 2-4: Connect to databases
+            controlDB = connectControlDB(config);
+            stagingDB = connectStagingDB(config);
+            warehouseDB = connectWarehouseDB(config);
+
+            // Step 5: Check if today's load already succeeded
+            checkTodayWarehouseLoadSuccess();
+
+            // Step 6: Prepare warehouse load process
+            executionId = prepareWarehouseLoadProcess();
+
+            // Step 7: Load data to warehouse
+            int total = loadToWarehouse(executionId);
+
+            // Step 8: Update log status
+            updateProcessLogStatus(executionId, "success", total, 0,
+                    "Load to Data Warehouse successfully");
+
+            System.out.println("\nTotal records loaded: " + total);
+
+            // Step 9: Send success email
+            sendSuccessEmail(total);
+
+            System.out.println("\n========================================");
+            System.out.println("LOAD TO DATA WAREHOUSE COMPLETED SUCCESSFULLY");
+            System.out.println("========================================");
+            System.exit(0);
+
+        } catch (Exception e) {
+            System.err.println("\n========================================");
+            System.err.println("LOAD TO DATA WAREHOUSE FAILED");
+            System.err.println("========================================");
+            e.printStackTrace();
+
+            if (executionId != null)
+                updateProcessLogStatus(executionId, "failed", 0, 0, e.getMessage());
+
+            sendErrorEmail(e);
+            System.exit(1);
+        }
     }
 }
