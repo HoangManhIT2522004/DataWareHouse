@@ -122,7 +122,7 @@ public class LoadToStaging {
         String dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
 
         // Cấu hình cứng đường dẫn hoặc lấy từ Config XML tuỳ bạn
-        String csvPath = "D:/DataWareHouse/src/main/java/data/weatherapi_" + dateStr + ".csv";
+        String csvPath = "data/weatherapi_" + dateStr + ".csv";
         File file = new File(csvPath);
 
         if (!file.exists()) {
