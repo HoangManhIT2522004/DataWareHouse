@@ -6,6 +6,8 @@ import org.w3c.dom.NodeList;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
 
@@ -13,16 +15,37 @@ public class LoadConfig {
 
     private final Document xmlDoc;
 
-    public LoadConfig(String resourcePath) throws Exception {
-        // Lấy file từ resources trong JAR
-        try (InputStream is = getClass().getClassLoader().getResourceAsStream(resourcePath)) {
-            if (is == null) {
-                throw new FileNotFoundException("Resource not found: " + resourcePath);
+    public LoadConfig(String configPath) throws Exception {
+        InputStream is = null;
+
+        try {
+            // Thử đọc từ filesystem trước (ưu tiên)
+            File file = new File(configPath);
+            if (file.exists()) {
+                is = new FileInputStream(file);
+                System.out.println("[LoadConfig] Loading from filesystem: " + file.getAbsolutePath());
+            } else {
+                // Nếu không tìm thấy trong filesystem, thử đọc từ classpath/resources
+                is = getClass().getClassLoader().getResourceAsStream(configPath);
+                if (is == null) {
+                    throw new FileNotFoundException("Config not found in filesystem or resources: " + configPath);
+                }
+                System.out.println("[LoadConfig] Loading from classpath: " + configPath);
             }
+
             DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
             DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
             xmlDoc = dBuilder.parse(is);
             xmlDoc.getDocumentElement().normalize();
+
+        } finally {
+            if (is != null) {
+                try {
+                    is.close();
+                } catch (Exception e) {
+                    // Ignore
+                }
+            }
         }
     }
 
