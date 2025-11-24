@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- Database Configuration -->
+    <database>
+        <control>
+            <host>localhost</host>
+            <port>5432</port>
+            <name>control</name>
+            <username>postgres</username>
+            <password></password>
+            <url>jdbc:postgresql://localhost:5432/control</url>
+        </control>
+
+        <staging>
+            <host>localhost</host>
+            <port>5432</port>
+            <name>staging</name>
+            <username>postgres</username>
+            <password></password>
+            <url>jdbc:postgresql://localhost:5432/staging</url>
+        </staging>
+
+        <warehouse>
+            <host>localhost</host>
+            <port>5432</port>
+            <name>warehouse</name>
+            <username>postgres</username>
+            <password></password>
+            <url>jdbc:postgresql://localhost:5432/warehouse</url>
+        </warehouse>
+
+    </database>
+
+    <!-- Email Configuration -->
+    <email>
+        <enabled>true</enabled>
+        <smtp>
+            <host>smtp.gmail.com</host>
+            <port>587</port>
+            <auth>true</auth>
+            <starttls>true</starttls>
+        </smtp>
+        <from>
+            <address>manhhoang2522004it@gmail.com</address>
+            <password></password>
+            <name>Weather ETL System</name>
+        </from>
+        <to>
+            <address>manhhoang2522004it@gmail.com</address>
+            <name>System Administrator</name>
+        </to>
+        <notifications>
+            <onSuccess>false</onSuccess>
+            <onError>true</onError>
+            <onFileExists>true</onFileExists>
+        </notifications>
+    </email>
+
+    <!-- Logging Configuration -->
+    <logging>
+        <level>INFO</level>
+        <console>true</console>
+        <file>true</file>
+        <maxFileSize>10MB</maxFileSize>
+        <maxHistory>30</maxHistory>
+    </logging>
+
+</configuration>
