@@ -207,36 +207,49 @@ public class TransformToStaging {
                             "   text = EXCLUDED.text, icon = EXCLUDED.icon, hash_key = EXCLUDED.hash_key, updated_at = CURRENT_TIMESTAMP " +
                             "WHERE dim_weather_condition.hash_key IS DISTINCT FROM EXCLUDED.hash_key");
 
-            // 2.3 Fact Weather Daily
+            // 2.3 Fact Weather Daily - BỔ SUNG ĐẦY ĐỦ TRƯỜNG
             totalUpdated += executeUpdate(conn, "Fact Weather",
                     "INSERT INTO fact_weather_daily (" +
                             "   location_sk, condition_sk, date_sk, observation_date, observation_time, " +
                             "   is_day, " +
-                            "   temp_c, humidity_pct, precip_mm, uv_index, " +
-                            "   vis_km, wind_kph, gust_kph, wind_deg, wind_dir, " +
-                            "   feelslike_c, pressure_mb, cloud_pct, batch_id, " +
-                            "   source_system, loaded_at" +
+                            "   temp_c, temp_f, feelslike_c, feelslike_f, " +
+                            "   pressure_mb, pressure_in, " +
+                            "   precip_mm, precip_in, " +
+                            "   humidity_pct, cloud_pct, uv_index, " +
+                            "   vis_km, vis_miles, " +
+                            "   wind_kph, wind_mph, gust_kph, gust_mph, wind_deg, wind_dir, " +
+                            "   batch_id, source_system, loaded_at" +
                             ") " +
                             "SELECT dl.location_sk, dwc.condition_sk, dd.date_sk, s.observation_date, s.observation_time, " +
                             "   s.is_day, " +
-                            "   s.temp_c, s.humidity_pct, s.precip_mm, s.uv_index, " +
-                            "   s.vis_km, s.wind_kph, s.gust_kph, s.wind_deg, s.wind_dir, " +
-                            "   s.feelslike_c, s.pressure_mb, s.cloud_pct, s.batch_id, " +
-                            "   s.source_system, CURRENT_TIMESTAMP " +
+                            "   s.temp_c, s.temp_f, s.feelslike_c, s.feelslike_f, " +
+                            "   s.pressure_mb, s.pressure_in, " +
+                            "   s.precip_mm, s.precip_in, " +
+                            "   s.humidity_pct, s.cloud_pct, s.uv_index, " +
+                            "   s.vis_km, s.vis_miles, " +
+                            "   s.wind_kph, s.wind_mph, s.gust_kph, s.gust_mph, s.wind_deg, s.wind_dir, " +
+                            "   s.batch_id, s.source_system, CURRENT_TIMESTAMP " +
                             "FROM stg_weather_observation s " +
                             "JOIN dim_location dl ON s.location_id = dl.location_id " +
                             "LEFT JOIN dim_weather_condition dwc ON s.condition_id = dwc.condition_id " +
                             "JOIN dim_date dd ON s.observation_date = dd.full_date " +
                             "ON CONFLICT (location_sk, observation_time) DO UPDATE SET " +
                             "   condition_sk = EXCLUDED.condition_sk, " +
-                            "   temp_c = EXCLUDED.temp_c, humidity_pct = EXCLUDED.humidity_pct, precip_mm = EXCLUDED.precip_mm, uv_index = EXCLUDED.uv_index, " +
-                            "   vis_km = EXCLUDED.vis_km, wind_kph = EXCLUDED.wind_kph, gust_kph = EXCLUDED.gust_kph, " +
-                            "   feelslike_c = EXCLUDED.feelslike_c, pressure_mb = EXCLUDED.pressure_mb, cloud_pct = EXCLUDED.cloud_pct, " +
+                            "   temp_c = EXCLUDED.temp_c, temp_f = EXCLUDED.temp_f, " +
+                            "   feelslike_c = EXCLUDED.feelslike_c, feelslike_f = EXCLUDED.feelslike_f, " +
+                            "   pressure_mb = EXCLUDED.pressure_mb, pressure_in = EXCLUDED.pressure_in, " +
+                            "   precip_mm = EXCLUDED.precip_mm, precip_in = EXCLUDED.precip_in, " +
+                            "   humidity_pct = EXCLUDED.humidity_pct, cloud_pct = EXCLUDED.cloud_pct, uv_index = EXCLUDED.uv_index, " +
+                            "   vis_km = EXCLUDED.vis_km, vis_miles = EXCLUDED.vis_miles, " +
+                            "   wind_kph = EXCLUDED.wind_kph, wind_mph = EXCLUDED.wind_mph, " +
+                            "   gust_kph = EXCLUDED.gust_kph, gust_mph = EXCLUDED.gust_mph, " +
+                            "   wind_deg = EXCLUDED.wind_deg, wind_dir = EXCLUDED.wind_dir, " +
                             "   is_day = EXCLUDED.is_day, " +
                             "   batch_id = EXCLUDED.batch_id, loaded_at = CURRENT_TIMESTAMP " +
                             "WHERE fact_weather_daily.temp_c IS DISTINCT FROM EXCLUDED.temp_c " +
                             "   OR fact_weather_daily.condition_sk IS DISTINCT FROM EXCLUDED.condition_sk " +
-                            "   OR fact_weather_daily.pressure_mb IS DISTINCT FROM EXCLUDED.pressure_mb");
+                            "   OR fact_weather_daily.pressure_mb IS DISTINCT FROM EXCLUDED.pressure_mb " +
+                            "   OR fact_weather_daily.wind_kph IS DISTINCT FROM EXCLUDED.wind_kph");
 
             // 2.4 Fact Air Quality
             totalUpdated += executeUpdate(conn, "Fact Air Quality",
