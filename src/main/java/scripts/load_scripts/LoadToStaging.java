@@ -27,7 +27,7 @@ public class LoadToStaging {
 
     private static DBConn controlDB;
     private static DBConn stagingDB;
-    
+
     static {
         System.out.println("=== LoadToStaging CLASS LOADED ===");
         System.out.println("Java Version: " + System.getProperty("java.version"));
@@ -47,7 +47,7 @@ public class LoadToStaging {
             return config;
         } catch (Exception e) {
             handleError("ERROR: Load Configuration Failed", "Unable to load config from: " + path, e);
-            return null;
+            return null; // Unreachable, but needed for compilation
         }
     }
 
@@ -103,7 +103,10 @@ public class LoadToStaging {
                 String body = "System detected that Load Staging has already completed successfully today.";
                 // EmailSender.sendEmail(subject, body); // Optional
                 System.out.println("[Step 3] Load already completed today, stopping process.");
-                System.exit(0);
+                System.out.println("\n========================================");
+                System.out.println("Process terminated: Already loaded today");
+                System.out.println("========================================");
+                System.exit(0); // Exit code 0: Normal termination
             } else {
                 System.out.println("[Step 3] No load success found today, proceeding...");
             }
@@ -121,12 +124,14 @@ public class LoadToStaging {
         System.out.println("[Step 4] Verifying input CSV file...");
         String dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
 
-        // Cấu hình cứng đường dẫn hoặc lấy từ Config XML tuỳ bạn
         String csvPath = "data/weatherapi_" + dateStr + ".csv";
         File file = new File(csvPath);
 
         if (!file.exists()) {
-            handleError("ERROR: Input File Missing", "Cannot find file: " + csvPath + "\nCheck if Extract process ran successfully.", new Exception("File Not Found"));
+            handleError("ERROR: Input File Missing",
+                    "Cannot find file: " + csvPath + "\nCheck if Extract process ran successfully.",
+                    new Exception("File Not Found"));
+            return null; // Unreachable
         }
         System.out.println("[Step 4] File found: " + file.getName());
         return file;
@@ -151,7 +156,9 @@ public class LoadToStaging {
                 if (rs.next()) configId[0] = rs.getInt(1);
             });
 
-            if (configId[0] == 0) throw new Exception("Failed to get config_process ID");
+            if (configId[0] == 0) {
+                throw new Exception("Failed to get config_process ID");
+            }
 
             String createLogSql = "SELECT create_new_loadstaging_log(" + configId[0] + ")";
             final String[] execId = {null};
@@ -159,12 +166,16 @@ public class LoadToStaging {
                 if (rs.next()) execId[0] = rs.getString(1);
             });
 
+            if (execId[0] == null) {
+                throw new Exception("Failed to create execution log");
+            }
+
             System.out.println("[Step 5] Created execution ID: " + execId[0]);
             return execId[0];
 
         } catch (Exception e) {
             handleError("ERROR: Prepare Load Failed", "Failed to create log entry.", e);
-            return null;
+            return null; // Unreachable
         }
     }
 
@@ -179,9 +190,10 @@ public class LoadToStaging {
             String sql = "TRUNCATE TABLE raw_weather_location, raw_weather_condition, " +
                     "raw_air_quality, raw_weather_observation RESTART IDENTITY CASCADE";
             stagingDB.executeUpdate(sql);
-            System.out.println("[Step 6] Raw tables truncated.");
+            System.out.println("[Step 6] Raw tables truncated successfully.");
         } catch (Exception e) {
             System.err.println("⚠️ Warning: Failed to truncate tables: " + e.getMessage());
+            // Not critical, continue
         }
     }
 
@@ -320,25 +332,33 @@ public class LoadToStaging {
                         psCond.executeBatch();
                         psAir.executeBatch();
                         psObs.executeBatch();
+                        System.out.println("  -> Processed " + count + " rows...");
                     }
                 } catch (Exception e) {
                     System.err.println("  ⚠️ Skip row error: " + e.toString());
                 }
             }
 
+            // Execute remaining batches
             psLoc.executeBatch();
             psCond.executeBatch();
             psAir.executeBatch();
             psObs.executeBatch();
             conn.commit();
-            System.out.println("[Step 7] Inserted " + count + " rows successfully.");
+
+            System.out.println("[Step 7] Successfully inserted " + count + " rows.");
             return count;
 
         } catch (Exception e) {
-            try { if (conn != null) conn.rollback(); } catch (SQLException ex) {}
-            // Log failed status directly here? Or throw up?
-            // Throwing up to main to handle exit
-            throw new RuntimeException(e);
+            try {
+                if (conn != null) {
+                    conn.rollback();
+                    System.err.println("Transaction rolled back due to error.");
+                }
+            } catch (SQLException ex) {
+                System.err.println("Rollback failed: " + ex.getMessage());
+            }
+            throw new RuntimeException("Load data failed: " + e.getMessage(), e);
         } finally {
             try { if (psLoc != null) psLoc.close(); } catch (SQLException ex) {}
             try { if (psCond != null) psCond.close(); } catch (SQLException ex) {}
@@ -364,7 +384,10 @@ public class LoadToStaging {
             // Archive File
             String archiveDir = "data/archive/";
             File dir = new File(archiveDir);
-            if (!dir.exists()) dir.mkdirs();
+            if (!dir.exists()) {
+                dir.mkdirs();
+                System.out.println("  -> Created archive directory: " + archiveDir);
+            }
 
             Path source = file.toPath();
             Path dest = Paths.get(archiveDir + file.getName());
@@ -374,6 +397,7 @@ public class LoadToStaging {
 
         } catch (Exception e) {
             System.err.println("⚠️ Warning: Post-processing failed (Log/Archive): " + e.getMessage());
+            // Not critical enough to fail the entire process
         }
     }
 
@@ -383,18 +407,43 @@ public class LoadToStaging {
     private static String safeGet(String[] row, Map<String, Integer> map, String colName) {
         Integer index = map.get(colName);
         if (index == null || index >= row.length) return null;
-        return row[index];
+        String value = row[index];
+        return (value == null || value.trim().isEmpty()) ? null : value.trim();
     }
 
+    /**
+     * Handle error: log, send email, and exit with code 1
+     */
     private static void handleError(String subject, String body, Exception e) {
-        EmailSender.sendError(subject, body, e);
-        System.err.println("\n[FAILED] " + subject);
-        if (e != null) e.printStackTrace();
-        System.exit(1);
+        System.err.println("\n╔════════════════════════════════════════╗");
+        System.err.println("║           PROCESS FAILED               ║");
+        System.err.println("╚════════════════════════════════════════╝");
+        System.err.println("Error: " + subject);
+        System.err.println("Details: " + body);
+
+        if (e != null) {
+            System.err.println("\nException Details:");
+            e.printStackTrace();
+        }
+
+        // Send error email
+        try {
+            EmailSender.sendError(subject, body, e);
+            System.err.println("\n✉ Error notification email sent.");
+        } catch (Exception emailEx) {
+            System.err.println("\n⚠️ Failed to send error email: " + emailEx.getMessage());
+        }
+
+        System.err.println("\n========================================");
+        System.err.println("Exiting with error code 1");
+        System.err.println("========================================\n");
+
+        System.exit(1); // Exit with error code
     }
 
     private static void printUsage() {
         System.out.println("Usage: java LoadToStaging <config_path>");
+        System.out.println("Example: java LoadToStaging config/config.xml");
     }
 
     /**
@@ -403,12 +452,15 @@ public class LoadToStaging {
      * ============================================================
      */
     public static void main(String[] args) {
-        System.out.println("========================================");
-        System.out.println("Weather ETL - Step 6: Load Process Started");
-        System.out.println("========================================\n");
+        System.out.println("╔════════════════════════════════════════╗");
+        System.out.println("║  Weather ETL - Load to Staging        ║");
+        System.out.println("║  Process Started                       ║");
+        System.out.println("╚════════════════════════════════════════╝\n");
 
         String configPath = (args.length > 0) ? args[0] : "config/config.xml";
         System.out.println("Config Path: " + configPath);
+        System.out.println("Start Time: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        System.out.println();
 
         try {
             // Step 1: Load config
@@ -417,7 +469,7 @@ public class LoadToStaging {
             // Step 2: Connect DBs
             connectDBs(config);
 
-            // Step 3: Check status
+            // Step 3: Check status (may exit with 0 if already loaded)
             checkTodayLoadSuccess();
 
             // Step 4: Verify File
@@ -434,25 +486,38 @@ public class LoadToStaging {
             try {
                 loadedCount = loadDataToStaging(csvFile, loadExecId);
             } catch (Exception e) {
-                // If load fails, update log to FAILED
+                // If load fails, update log to FAILED before exiting
+                System.err.println("\n[ERROR] Data load failed, updating log status...");
                 try {
                     String sql = "SELECT update_loadstaging_log_status(?, ?::process_status, ?, ?, ?)";
-                    controlDB.executeQuery(sql, rs -> {}, loadExecId, "failed", 0, 0, e.getMessage());
-                } catch (Exception ex) {}
-                throw e; // Rethrow to main catch
+                    controlDB.executeQuery(sql, rs -> {}, loadExecId, "failed", 0, 0,
+                            "Load failed: " + e.getMessage());
+                    System.err.println("Log status updated to FAILED");
+                } catch (Exception ex) {
+                    System.err.println("⚠️ Failed to update log status: " + ex.getMessage());
+                }
+                throw e; // Re-throw to main catch for handleError
             }
 
             // Step 8: Update Log & Archive
             updateLogAndArchive(loadExecId, loadedCount, csvFile);
 
-            // SUCCESS
-            System.out.println("\n========================================");
-            System.out.println("Weather ETL - Load Process COMPLETED");
-            System.out.println("========================================");
-            System.exit(0);
+            // ========== SUCCESS ==========
+            System.out.println("\n╔════════════════════════════════════════╗");
+            System.out.println("║    LOAD PROCESS COMPLETED              ║");
+            System.out.println("║    Status: SUCCESS                     ║");
+            System.out.println("╚════════════════════════════════════════╝");
+            System.out.println("Rows Loaded: " + loadedCount);
+            System.out.println("End Time: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            System.out.println("\nExiting with code 0 (Success)");
+
+            System.exit(0); // Exit with success code
 
         } catch (Exception e) {
-            handleError("FATAL: Load Process Failed", e.getMessage(), e);
+            handleError("FATAL: Load Process Failed",
+                    "The load process encountered a critical error and cannot continue.",
+                    e);
+            // handleError will call System.exit(1), this line is unreachable
         }
     }
 }
