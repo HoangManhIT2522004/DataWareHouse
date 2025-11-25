@@ -1,0 +1,66 @@
+========================================== 
+Load to Warehouse Started: Tue 11/25/2025 19:43:29.84 
+========================================== 
+=== LoadToDataWarehouse CLASS LOADED ===
+Java Version: 21.0.9
+Working Directory: D:\DataWareHouse
+Classpath: target\scripts\load_scripts\LoadToDataWarehouse.jar
+========================================
+   WEATHER ETL - STEP 4: LOAD TO WAREHOUSE
+========================================
+
+Configuration:
+  - Config File : config\config.xml
+
+[Step 1] Loading configuration...
+[LoadConfig] Loading from filesystem: D:\DataWareHouse\config\config.xml
+[Step 1] Config loaded from: config\config.xml
+[Step 2] Connecting to Control database...
+[DEBUG] Database element: Found
+[DEBUG] Control element: Found
+[DEBUG] URL: jdbc:postgresql://localhost:5432/control
+[DEBUG] Username: postgres
+[DEBUG] Password: ***
+[Step 2] Control database connection successful
+[Step 3] Connecting to Staging database...
+[DEBUG] Staging element: Found
+[DEBUG] URL: jdbc:postgresql://localhost:5432/staging
+[DEBUG] Username: postgres
+[DEBUG] Password: ***
+[Step 3] Staging database connection successful
+[Step 4] Connecting to Warehouse database...
+[DEBUG] Warehouse element: Found
+[DEBUG] URL: jdbc:postgresql://localhost:5432/warehouse
+[DEBUG] Username: postgres
+[DEBUG] Password: ***
+[Step 4] Warehouse database connection successful
+[Step 5] Checking today's warehouse load status...
+[Step 5] No warehouse load success found today, proceeding...
+[Step 6] Preparing warehouse load process...
+[Step 6] Process info:
+  - Process Name  : LOD_DW_20251125
+  - Process Type  : load_warehouse
+  - Source        : staging_to_warehouse
+  - Destination   : warehouse
+  - Description   : dim_and_fact_tables
+[Step 6] Config Process ID: 6
+[Step 6] Created execution: LOD_DW_20251125_001
+[Step 7] Starting Load to Warehouse...
+ Loading  dim_location : 63 rows.
+ Loading  dim_weather_condition : 9 rows.
+ Loading  fact_weather_daily : 63 rows.
+ Loading  fact_air_quality_daily : 63 rows.
+[Step 7] Warehouse load completed. Total records: 198
+[Log] Status updated: success
+
+Total records loaded: 198
+[LoadConfig] Loading from filesystem: D:\DataWareHouse\config\config.xml
+[EmailSender] Email config loaded OK
+[EmailSender] Email sent to: manhhoang2522004it@gmail.com
+[Email] Success email sent!
+
+========================================
+LOAD TO DATA WAREHOUSE COMPLETED SUCCESSFULLY
+========================================
+Load to Warehouse Finished: Tue 11/25/2025 19:43:35.00 
+========================================== 

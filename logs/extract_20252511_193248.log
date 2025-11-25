@@ -1,0 +1,79 @@
+========================================== 
+Extract Process Started: Tue 11/25/2025 19:32:48.22 
+========================================== 
+=== ExtractToFile CLASS LOADED ===
+Java Version: 21.0.9
+Working Directory: D:\DataWareHouse
+Classpath: target\scripts\extract_scripts\ExtractToFile.jar
+========================================
+Weather ETL - Extract Process Started
+========================================
+
+Configuration:
+  - Main Config    : config\config.xml
+  - Extract Config : config\extract_config.xml
+
+[Step 1] Loading configuration...
+[LoadConfig] Loading from filesystem: D:\DataWareHouse\config\config.xml
+[Step 1] Config loaded from: config\config.xml
+[Step 2] Connecting to database...
+[DEBUG] Database element: Found
+[DEBUG] Control element: Found
+[DEBUG] URL: jdbc:postgresql://localhost:5432/control
+[DEBUG] Username: postgres
+[DEBUG] Password: EMPTY!
+[LoadConfig] Loading from filesystem: D:\DataWareHouse\config\config.xml
+[EmailSender] Email config loaded OK
+ERROR: Database Connection Failed: The server requested SCRAM-based authentication, but the password is an empty string.
+org.postgresql.util.PSQLException: The server requested SCRAM-based authentication, but the password is an empty string.
+	at org.postgresql.core.v3.ConnectionFactoryImpl.lambda$doAuthentication$5(ConnectionFactoryImpl.java:944)
+	at org.postgresql.core.v3.AuthenticationPluginManager.withPassword(AuthenticationPluginManager.java:82)
+	at org.postgresql.core.v3.ConnectionFactoryImpl.doAuthentication(ConnectionFactoryImpl.java:935)
+	at org.postgresql.core.v3.ConnectionFactoryImpl.tryConnect(ConnectionFactoryImpl.java:234)
+	at org.postgresql.core.v3.ConnectionFactoryImpl.openConnectionImpl(ConnectionFactoryImpl.java:289)
+	at org.postgresql.core.ConnectionFactory.openConnection(ConnectionFactory.java:57)
+	at org.postgresql.jdbc.PgConnection.<init>(PgConnection.java:277)
+	at org.postgresql.Driver.makeConnection(Driver.java:448)
+	at org.postgresql.Driver.connect(Driver.java:298)
+	at java.sql/java.sql.DriverManager.getConnection(DriverManager.java:683)
+	at java.sql/java.sql.DriverManager.getConnection(DriverManager.java:230)
+	at utils.DBConn.getConnection(DBConn.java:17)
+	at utils.DBConn.executeQuery(DBConn.java:21)
+	at scripts.extract_scripts.ExtractToFile.connectDB(ExtractToFile.java:78)
+	at scripts.extract_scripts.ExtractToFile.main(ExtractToFile.java:275)
+[EmailSender] Failed to send email: 535-5.7.8 Username and Password not accepted. For more information, go to
+535 5.7.8  https://support.google.com/mail/?p=BadCredentials d9443c01a7336-29b787407c0sm104037295ad.49 - gsmtp
+
+javax.mail.AuthenticationFailedException: 535-5.7.8 Username and Password not accepted. For more information, go to
+535 5.7.8  https://support.google.com/mail/?p=BadCredentials d9443c01a7336-29b787407c0sm104037295ad.49 - gsmtp
+
+	at com.sun.mail.smtp.SMTPTransport$Authenticator.authenticate(SMTPTransport.java:965)
+	at com.sun.mail.smtp.SMTPTransport.authenticate(SMTPTransport.java:876)
+	at com.sun.mail.smtp.SMTPTransport.protocolConnect(SMTPTransport.java:780)
+	at javax.mail.Service.connect(Service.java:388)
+	at javax.mail.Service.connect(Service.java:246)
+	at javax.mail.Service.connect(Service.java:195)
+	at javax.mail.Transport.send0(Transport.java:254)
+	at javax.mail.Transport.send(Transport.java:124)
+	at utils.EmailSender.sendEmail(EmailSender.java:82)
+	at utils.EmailSender.sendError(EmailSender.java:95)
+	at scripts.extract_scripts.ExtractToFile.connectDB(ExtractToFile.java:93)
+	at scripts.extract_scripts.ExtractToFile.main(ExtractToFile.java:275)
+[Step 2] FAILED: Cannot connect to database
+org.postgresql.util.PSQLException: The server requested SCRAM-based authentication, but the password is an empty string.
+	at org.postgresql.core.v3.ConnectionFactoryImpl.lambda$doAuthentication$5(ConnectionFactoryImpl.java:944)
+	at org.postgresql.core.v3.AuthenticationPluginManager.withPassword(AuthenticationPluginManager.java:82)
+	at org.postgresql.core.v3.ConnectionFactoryImpl.doAuthentication(ConnectionFactoryImpl.java:935)
+	at org.postgresql.core.v3.ConnectionFactoryImpl.tryConnect(ConnectionFactoryImpl.java:234)
+	at org.postgresql.core.v3.ConnectionFactoryImpl.openConnectionImpl(ConnectionFactoryImpl.java:289)
+	at org.postgresql.core.ConnectionFactory.openConnection(ConnectionFactory.java:57)
+	at org.postgresql.jdbc.PgConnection.<init>(PgConnection.java:277)
+	at org.postgresql.Driver.makeConnection(Driver.java:448)
+	at org.postgresql.Driver.connect(Driver.java:298)
+	at java.sql/java.sql.DriverManager.getConnection(DriverManager.java:683)
+	at java.sql/java.sql.DriverManager.getConnection(DriverManager.java:230)
+	at utils.DBConn.getConnection(DBConn.java:17)
+	at utils.DBConn.executeQuery(DBConn.java:21)
+	at scripts.extract_scripts.ExtractToFile.connectDB(ExtractToFile.java:78)
+	at scripts.extract_scripts.ExtractToFile.main(ExtractToFile.java:275)
+ERROR: Extract process failed with code 1 

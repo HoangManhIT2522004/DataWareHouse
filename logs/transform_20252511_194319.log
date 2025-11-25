@@ -1,0 +1,28 @@
+========================================== 
+Transform Process Started: Tue 11/25/2025 19:43:19.31 
+========================================== 
+========================================
+   WEATHER ETL - STEP 7: TRANSFORM
+========================================
+[Config] Loading config from: config\config.xml
+[LoadConfig] Loading from filesystem: D:\DataWareHouse\config\config.xml
+[Prepare] Creating process log entry...
+[Prepare] Created Execution ID: TRF_STG_20251125_001
+[Process] Starting Data Transformation...
+
+--- [PHASE 1] RAW TO STAGING ---
+  > Staging Location... Inserted 63 rows.
+  > Staging Condition... Inserted 5 rows.
+  > Staging Observation... Inserted 63 rows.
+  > Staging Air Quality... Inserted 63 rows.
+
+--- [PHASE 2] STAGING TO DIM/FACT ---
+  > Dim Location... Upserted 63 rows.
+  > Dim Condition... Upserted 0 rows.
+  > Fact Weather... Upserted 63 rows.
+  > Fact Air Quality... Upserted 63 rows.
+[Log] Updated status to: success
+
+TRANSFORM COMPLETED SUCCESSFULLY
+Transform Process Finished: Tue 11/25/2025 19:43:20.30 
+========================================== 

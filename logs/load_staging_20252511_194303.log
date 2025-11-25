@@ -1,0 +1,36 @@
+========================================== 
+Load to Staging Started: Tue 11/25/2025 19:43:03.88 
+========================================== 
+=== LoadToStaging CLASS LOADED ===
+Java Version: 21.0.9
+Working Directory: D:\DataWareHouse
+========================================
+Weather ETL - Step 6: Load Process Started
+========================================
+
+Config Path: config\config.xml
+[Step 1] Loading configuration...
+[LoadConfig] Loading from filesystem: D:\DataWareHouse\config\config.xml
+[Step 1] Config loaded from: config\config.xml
+[Step 2] Connecting to databases...
+[Step 2] Connected to Control DB
+[Step 2] Connected to Staging DB
+[Step 3] Checking today's load status...
+[Step 3] No load success found today, proceeding...
+[Step 4] Verifying input CSV file...
+[Step 4] File found: weatherapi_20251125.csv
+[Step 5] Creating process log...
+[Step 5] Created execution ID: LOD_STG_20251125_001
+[Step 6] Truncating RAW tables...
+[Step 6] Raw tables truncated.
+[Step 7] Loading data into Staging...
+[Step 7] Inserted 63 rows successfully.
+[Step 8] Updating logs and archiving file...
+  -> Log updated to SUCCESS
+  -> File archived to: data\archive\weatherapi_20251125.csv
+
+========================================
+Weather ETL - Load Process COMPLETED
+========================================
+Load to Staging Finished: Tue 11/25/2025 19:43:04.88 
+========================================== 

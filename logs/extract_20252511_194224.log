@@ -1,0 +1,190 @@
+========================================== 
+Extract Process Started: Tue 11/25/2025 19:42:24.06 
+========================================== 
+=== ExtractToFile CLASS LOADED ===
+Java Version: 21.0.9
+Working Directory: D:\DataWareHouse
+Classpath: target\scripts\extract_scripts\ExtractToFile.jar
+========================================
+Weather ETL - Extract Process Started
+========================================
+
+Configuration:
+  - Main Config    : config\config.xml
+  - Extract Config : config\extract_config.xml
+
+[Step 1] Loading configuration...
+[LoadConfig] Loading from filesystem: D:\DataWareHouse\config\config.xml
+[Step 1] Config loaded from: config\config.xml
+[Step 2] Connecting to database...
+[DEBUG] Database element: Found
+[DEBUG] Control element: Found
+[DEBUG] URL: jdbc:postgresql://localhost:5432/control
+[DEBUG] Username: postgres
+[DEBUG] Password: ***
+[Step 2] Database connection successful
+[Step 3] Checking today's extract status...
+[Step 3] No extract success found today, proceeding...
+[Step 1] Loading configuration...
+[LoadConfig] Loading from filesystem: D:\DataWareHouse\config\extract_config.xml
+[Step 1] Config loaded from: config\extract_config.xml
+[Step 4] Preparing extract...
+[Step 4] Config info from XML:
+  - Config Name   : EXT_20251125
+  - Source Type   : api
+  - Source URL    : https://api.weatherapi.com/v1/current.json?key=4e10d60eb8384de694031201251710&q=Hanoi&aqi=yes
+  - Output Path   : data/weatherapi_20251125.csv
+  - Is Active     : true
+[Step 4] Config from DB:
+  - Config ID     : 2
+  - Source URL    : https://api.weatherapi.com/v1/current.json?key=4e10d60eb8384de694031201251710&q=Hanoi&aqi=yes
+  - Output Path   : data/weatherapi_20251125.csv
+[Step 4] Created execution: EXT_20251125_001
+[Step 5] Extracting weather data (STRICT MODE)...
+  - Execution ID : EXT_20251125_001
+  - Source URL   : https://api.weatherapi.com/v1/current.json?key=4e10d60eb8384de694031201251710&q=Hanoi&aqi=yes
+  - Output Path  : data/weatherapi_20251125.csv
+  - Total locations: 63
+  Processing: Hà N?i (HN)
+  ? Success
+  Processing: H?i Phòng (HP)
+  ? Success
+  Processing: H? Long (QN)
+  ? Success
+  Processing: B?c Ninh (BNI)
+  ? Success
+  Processing: H?i D??ng (HD)
+  ? Success
+  Processing: H?ng Yên (HY)
+  ? Success
+  Processing: Ph? Lý (HNA)
+  ? Success
+  Processing: Nam ??nh (ND)
+  ? Success
+  Processing: Thái Bình (TB)
+  ? Success
+  Processing: Ninh Bình (NB)
+  ? Success
+  Processing: V?nh Yên (VP)
+  ? Success
+  Processing: B?c Giang (BG)
+  ? Success
+  Processing: Vi?t Trì (PT)
+  ? Success
+  Processing: Thái Nguyên (TN)
+  ? Success
+  Processing: L?ng S?n (LS)
+  ? Success
+  Processing: Cao B?ng (CB)
+  ? Success
+  Processing: B?c K?n (BK)
+  ? Success
+  Processing: Tuyên Quang (TQ)
+  ? Success
+  Processing: Hà Giang (HG)
+  ? Success
+  Processing: Lào Cai (LC)
+  ? Success
+  Processing: Yên Bái (YB)
+  ? Success
+  Processing: Lai Châu (LCH)
+  ? Success
+  Processing: ?i?n Biên (DB)
+  ? Success
+  Processing: S?n La (SL)
+  ? Success
+  Processing: Hòa Bình (HB)
+  ? Success
+  Processing: Thanh Hóa (TH)
+  ? Success
+  Processing: Vinh (NA)
+  ? Success
+  Processing: Hà T?nh (HT)
+  ? Success
+  Processing: ??ng H?i (QB)
+  ? Success
+  Processing: ?ông Hà (QT)
+  ? Success
+  Processing: Hu? (TTH)
+  ? Success
+  Processing: ?à N?ng (DN)
+  ? Success
+  Processing: Tam K? (QNA)
+  ? Success
+  Processing: Qu?ng Ngãi (QNG)
+  ? Success
+  Processing: Quy Nh?n (BD)
+  ? Success
+  Processing: Tuy Hòa (PY)
+  ? Success
+  Processing: Nha Trang (KH)
+  ? Success
+  Processing: Phan Rang (NT)
+  ? Success
+  Processing: Phan Thi?t (BT)
+  ? Success
+  Processing: Kon Tum (KT)
+  ? Success
+  Processing: Pleiku (GL)
+  ? Success
+  Processing: Buôn Ma Thu?t (DL)
+  ? Success
+  Processing: Gia Ngh?a (DNO)
+  ? Success
+  Processing: ?à L?t (LD)
+  ? Success
+  Processing: H? Chí Minh (HCM)
+  ? Success
+  Processing: ??ng Xoài (BP)
+  ? Success
+  Processing: Tây Ninh (TNI)
+  ? Success
+  Processing: Th? D?u M?t (BDU)
+  ? Success
+  Processing: Biên Hòa (DNa)
+  ? Success
+  Processing: V?ng Tàu (BRVT)
+  ? Success
+  Processing: Tân An (LA)
+  ? Success
+  Processing: M? Tho (TG)
+  ? Success
+  Processing: B?n Tre (BTE)
+  ? Success
+  Processing: Trà Vinh (TV)
+  ? Success
+  Processing: V?nh Long (VL)
+  ? Success
+  Processing: Cao Lãnh (DT)
+  ? Success
+  Processing: Long Xuyên (AG)
+  ? Success
+  Processing: R?ch Giá (KG)
+  ? Success
+  Processing: C?n Th? (CT)
+  ? Success
+  Processing: V? Thanh (HGI)
+  ? Success
+  Processing: Sóc Tr?ng (ST)
+  ? Success
+  Processing: B?c Liêu (BL)
+  ? Success
+  Processing: Cà Mau (CM)
+  ? Success
+
+[Step 5] Extract completed:
+  - Success: 63
+  - Failed : 0
+  - File   : data/weatherapi_20251125.csv
+[Step 5] Updating log status to SUCCESS...
+[Step 5] Log status updated to SUCCESS
+[LoadConfig] Loading from filesystem: D:\DataWareHouse\config\config.xml
+[EmailSender] Email config loaded OK
+[EmailSender] Email sent to: manhhoang2522004it@gmail.com
+[Step 5] Success email sent
+
+========================================
+Weather ETL - Extract Process COMPLETED
+========================================
+Extract Process Finished: Tue 11/25/2025 19:42:49.37 
+========================================== 
